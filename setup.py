@@ -9,7 +9,8 @@ setup(
             'pytest>=6.0',
             'pytest-cov',
             'numpy',
-            'matplotlib'
+            'matplotlib',
+            'scipy'
         ],
     },
 ) 
