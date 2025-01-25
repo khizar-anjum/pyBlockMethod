@@ -71,7 +71,7 @@ class volkovSolver(PDESolver):
         
         if verbose:
             print("Step 2: Initializing solution data structures...")
-        self.initialize_solution()
+        self._initialize_solution()
         
         if verbose:
             print("Step 3: Estimating solution over curved boundaries...")
@@ -139,7 +139,7 @@ class volkovSolver(PDESolver):
                                                         self.get_carrier_function_value_in_block_coordinate_system(blk, blk.r0, self.theta_mu[blk.id_][k])) * poisson_kernel_value
                 self.solution[tuple(point)] = self.get_carrier_function_value_in_block_coordinate_system(blk, r, theta) + sum_
         
-    def initialize_solution(self):
+    def _initialize_solution(self):
         """
         Initialize the solution data structures for the block grid method.
         This method sets up the following instance variables:
