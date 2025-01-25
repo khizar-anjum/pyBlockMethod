@@ -13,7 +13,7 @@ from .base import PDESolver
 class volkovSolver(PDESolver):
     def __init__(self, poly : polygon, boundary_conditions : list[list[float]] = None, is_dirichlet : list[bool] = None,
                  n : int = 10, delta : float = 0.01, max_iter : int = 100, radial_heuristic : float = 0.8,
-                 overlap_heuristic : float = 0.8):
+                 overlap_heuristic : float = 0.1):
         """
         Initialize the VolkovSolver class. Solves using block grid method by E. Volkov, as outlined in the
         book "Block Method for Solving the Laplace Equation and for Constructing Conformal Mappings (1994)" ISBN: 0849394066
