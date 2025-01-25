@@ -7,6 +7,7 @@ import os
 from src.pyBlockGrid.core.polygon import polygon
 from src.pyBlockGrid.solvers.volkov import volkovSolver
 from src.pyBlockGrid.visualization.plotting import plot_3by3_solution_steps
+import pytest
 
 def test_polygon(poly):
     print(f"Polygon area: {poly.area():.2f}")
@@ -141,3 +142,22 @@ def test_3by3_plotting():
         radial_heuristics_iter=radial_heuristics_iter,
         output_folder="plots"
     )
+
+@pytest.fixture
+def square_polygon():
+    vertices = np.array([[0, 0], [1, 0], [1, 1], [0, 1]])
+    return polygon(vertices)
+
+def test_solver_basic(square_polygon):
+    solver = volkovSolver(
+        poly=square_polygon,
+        boundary_conditions=[[1.0], [0.0], [0.0], [0.0]],
+        is_dirichlet=[True] * 4,
+        delta=0.05,
+        n=50,
+        max_iter=10
+    )
+    
+    solution = solver.solve(verbose=False)
+    assert len(solution) > 0
+    assert all(isinstance(val, float) for val in solution.values())

@@ -30,6 +30,13 @@ def main():
         max_iter=10  # Maximum iterations
     )
     
+    # Solve and get solution
+    solution = solver.solve(verbose=True)
+    
+    # Test assertions
+    assert len(solution) > 0, "Solution should contain values"
+    assert all(isinstance(val, float) for val in solution.values()), "All solution values should be floats"
+    
     # Solve and plot
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
     
@@ -39,7 +46,6 @@ def main():
     ax1.set_title('Block Covering')
     
     # Solve and plot solution
-    solution = solver.solve(verbose=True)
     solver.plot_solution(ax=ax2, solution=solution)
     ax2.set_title('Temperature Distribution')
     
