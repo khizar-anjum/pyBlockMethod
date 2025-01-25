@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pyBlockGrid"
+version = "0.1.0"
+authors = [
+  { name="Khizar Anjum", email="khizaranjum28@gmail.com" },
+]
+description = "A Laplace equation solver on polygons using Volkov method"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "numpy",
+    "matplotlib",
+    # Add other dependencies your package needs
+]
+
+[project.urls]
+"Homepage" = "https://github.com/khizar-anjum/pyBlockGrid"
+"Bug Tracker" = "https://github.com/khizar-anjum/pyBlockGrid/issues" 
