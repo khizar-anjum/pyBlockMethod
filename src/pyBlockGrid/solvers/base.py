@@ -12,6 +12,6 @@ class PDESolver(ABC):
         pass
 
     @abstractmethod
-    def _initialize_solution(self):
+    def initialize_solution(self):
         """Initialize solution data structures."""
         pass 
