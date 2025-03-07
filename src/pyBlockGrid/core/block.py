@@ -34,12 +34,10 @@ class block:
         self.id_ = id_ # id of the block, used for indexing, and finding overlaps between blocks
         self.edge_i_index = edge_i_index # index of the edge vector from which the block extends, None for third kind blocks
         self.edge_j_index = edge_j_index # index of the edge vector to which the block extends, None for second and third kind blocks
-        self.inner_points = [] # inner points of the block from the meshgrid, in global coordinates
+        self.inner_points = np.empty((0, 2)) # inner points of the block from the meshgrid, in global coordinates
 
-    def is_inside(self, point):
-        # Vector from block center to point
-        v = point - self.center
-        dist = np.linalg.norm(v)
-        if dist > self.length:
-            return False
-        return True
+    def is_inside(self, points : np.ma.masked_array):
+        # Vector from block center to points
+        v = points - self.center
+        dist = np.ma.masked_array(np.linalg.norm(v, axis = 1), mask = points.mask[:, 0])
+        return dist < self.length

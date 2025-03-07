@@ -2,20 +2,17 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-from scipy.interpolate import griddata
 import matplotlib.pyplot as plt
 from pyBlockGrid.core.block import block
 from pyBlockGrid.core.polygon import polygon
-import random
-import warnings
 from .base import PDESolver
 
 class volkovSolver(PDESolver):
     def __init__(self, poly : polygon, boundary_conditions : list[list[float]] = None, is_dirichlet : list[bool] = None,
                  n : int = 10, delta : float = 0.01, max_iter : int = 100, radial_heuristic : float = 0.8,
-                 overlap_heuristic : float = 0.1):
+                 overlap_heuristic : float = 0.1, tolerance : float = 1e-10, verify_solution : bool = False):
         """
-        Initialize the VolkovSolver class. Solves using block grid method by E. Volkov, as outlined in the
+        Initialize the volkovSolver class. Solves using block grid method by E. Volkov, as outlined in the
         book "Block Method for Solving the Laplace Equation and for Constructing Conformal Mappings (1994)" ISBN: 0849394066
         The basic boundary-value problem is given by:
             -\\Delta u = 0 in the domain \\Omega
@@ -37,6 +34,8 @@ class volkovSolver(PDESolver):
         max_iter (int): The maximum number of iterations to solve the Laplace equation
         radial_heuristic (float): The heuristic for tapering off the length of the blocks of first and second kind from the maximum
             length, can be between 0 and 1.
+        tolerance (float): The tolerance for floating point errors, should be very small, 1e-10 is recommended.
+        overlap_heuristic (float): The heuristic for the overlap of the blocks, can be between 0 and 0.5.
 
         Returns:
         None
@@ -56,14 +55,39 @@ class volkovSolver(PDESolver):
         assert self.radial_heuristic > 0.707, "The radial heuristic must be greater than 0.707 (sqrt(2)/2)"
         self.overlap_heuristic = overlap_heuristic
         assert 0 < self.overlap_heuristic < 0.5, "The overlap heuristic must be between 0 and 0.5"
+        self.tol = tolerance
+        assert self.tol > 0, "The tolerance must be greater than 0"
+        self.verify_solution = verify_solution
         self.blocks = []
         self.N = 0
         self.L = 0
         self.M = 0
-        self.solution = {} # final solution u(x, y)
+        self.x_min, self.y_min = np.min(self.poly.vertices, axis=0) 
+        self.x_max, self.y_max = np.max(self.poly.vertices, axis=0) 
+        self.min_xy = np.array([self.x_min, self.y_min])[np.newaxis, :]
+        # Create solution array and mask points outside polygon
+        # Calculate grid dimensions
+        self.ny = int(np.ceil((self.y_max - self.y_min) / self.delta))
+        self.nx = int(np.ceil((self.x_max - self.x_min) / self.delta))
+        
+        # Create grid points more efficiently using meshgrid
+        x = np.linspace(self.x_min + 0.5 * self.delta, self.x_max + 0.5 * self.delta, self.nx)
+        y = np.linspace(self.y_min + 0.5 * self.delta, self.y_max + 0.5 * self.delta, self.ny)
+        self.X, self.Y = np.meshgrid(x, y)
+        
+        # Create points array without using column_stack
+        points = np.stack([self.X.ravel(), self.Y.ravel()], axis=1)
+        
+        # Create mask using vectorized operations
+        mask = self.poly.is_inside(points).reshape(self.ny, self.nx)
+        
+        # Create masked array directly
+        self.solution = np.ma.masked_array(np.zeros((self.ny, self.nx)), mask=~mask)
+        self.inside_block_ids_ = np.ma.masked_array(np.zeros((self.ny, self.nx), dtype=int), mask=~mask)
+        self.cartesian_grid = np.ma.array(np.stack([self.X, self.Y], axis = 2), 
+                                          mask=np.repeat(~mask[:, :, np.newaxis], 2, axis=2))
 
-    def solve(self, verbose = False, plot = False, ax = None, show_boundary_conditions = True,
-              show_quantized_boundaries = False):
+    def solve(self, verbose = False, plot = False, ax = None):
         if verbose:
             print("Starting solution process...")
             print("Step 1: Finding block covering...")
@@ -71,7 +95,7 @@ class volkovSolver(PDESolver):
         
         if verbose:
             print("Step 2: Initializing solution data structures...")
-        self._initialize_solution()
+        self.initialize_solution()
         
         if verbose:
             print("Step 3: Estimating solution over curved boundaries...")
@@ -87,274 +111,381 @@ class volkovSolver(PDESolver):
         if verbose:
             print(f"N, L, M = {self.N}, {self.L}, {self.M}")
         if plot:
-            self.plot_block_covering(ax = ax, show_boundary_conditions = show_boundary_conditions, 
-                                    show_quantized_boundaries = show_quantized_boundaries)
+            self.plot_solution(ax)
             
         return self.solution
 
-    def plot_solution(self, ax, solution, N = 100, vmin = None, vmax = None):
+    def plot_solution(self, ax, vmin = None, vmax = None):
         # Plot the solution on the given axis
-        # Convert solution points and values to grid format for heatmap
-        x_coords = [point[0] for point in solution.keys()]
-        y_coords = [point[1] for point in solution.keys()]
-        values = list(solution.values())
-        
-        # Create regular grid
-        xi = np.linspace(min(x_coords), max(x_coords), N)
-        yi = np.linspace(min(y_coords), max(y_coords), N)
-        xi, yi = np.meshgrid(xi, yi)
-        
-        # Interpolate scattered data to regular grid using scipy's griddata
-        zi = griddata((x_coords, y_coords), values, (xi, yi), method='linear')
-        
-        # Create mask for points outside polygon
-        mask = np.zeros_like(zi, dtype=bool)
-        for i in range(len(xi)):
-            for j in range(len(yi)):
-                point = np.array([xi[i,j], yi[i,j]])
-                # Check if point is inside polygon using ray casting algorithm
-                inside = self.poly.is_inside(point)
-                mask[i,j] = inside
-        
-        # Mask points outside polygon
-        zi_masked = np.ma.masked_array(zi, ~mask)
-        
         # Plot heatmap with masked data
-        im = ax.pcolormesh(xi, yi, zi_masked, shading='auto', cmap='viridis', vmin=vmin, vmax=vmax)
+        im = ax.pcolormesh(self.X, self.Y, self.solution, shading='auto', cmap='viridis', vmin=vmin, vmax=vmax)
         # plt.colorbar(im, ax=ax, orientation='horizontal')
         plt.colorbar(im, ax=ax)
 
     def estimate_solution_over_inner_points(self):
         # Estimate the solution over the inner points
         # This is done by using the equation (5.1) in the book
-        self.solution = {} # reset the solution dictionary
-        for blk in self.blocks:
-            # get carrier function and poisson kernel for the current block
-            for point in blk.inner_points:
-                r, theta = self.to_block_polar_coordinates(blk, point)
-                sum_ = 0
-                for k in range(self.n_mu[blk.id_]):
-                    poisson_kernel_value = self.get_poisson_kernel_value_in_block_coordinate_system(blk, r, theta, self.theta_mu[blk.id_][k])
-                    sum_ += self.beta_mu[blk.id_] * (self.boundary_estimates[tuple(self.quantized_boundary_points[blk.id_][k])] - \
-                                                        self.get_carrier_function_value_in_block_coordinate_system(blk, blk.r0, self.theta_mu[blk.id_][k])) * poisson_kernel_value
-                self.solution[tuple(point)] = self.get_carrier_function_value_in_block_coordinate_system(blk, r, theta) + sum_
+        self.inner_sol_Q, self.inner_sol_R = self.find_inner_points_Q_and_R()
+
+        N, M = self.solution.shape
+        for i in range(N):
+            for j in range(M):
+                if not self.solution.mask[i, j]:
+                    block_id = self.inside_block_ids_[i, j]
+                    self.solution[i, j] = self.inner_sol_Q[i, j] + self.beta_mu[block_id] * \
+                        np.sum((self.boundary_estimates[block_id] - self.mu_carrier_function_values[block_id]) * \
+                               self.inner_sol_R[i, j])
         
-    def _initialize_solution(self):
+    def find_inner_points_Q_and_R(self):
+        # Find the inner points Q (carrier function) and R (poisson kernel)
+        # This is done according to equation (5.1) in the book
+        Q = np.ma.zeros_like(self.solution)
+        R = self.theta_mu[self.inside_block_ids_] # init array to store the poisson kernel values with proper shape
+        N, M = Q.shape
+        k = np.arange(self.phi_ij.shape[1])
+        points_polar = self.get_inner_points_in_polar_coordinates()
+        boundary_identifiers = np.squeeze(self.block_nu.dot(np.array([[2], [1]])))[self.inside_block_ids_]
+        block_kinds = self.block_type[self.inside_block_ids_]
+        nu_ij = self.block_nu[self.inside_block_ids_]
+        phi_ij = self.phi_ij[self.inside_block_ids_]
+        r0_ = self.r0_mu[self.inside_block_ids_]
+        eta_ij = self.theta_mu[self.inside_block_ids_]
+        alpha_ij = self.alpha_mu[self.inside_block_ids_]
+        for i in range(N):
+            for j in range(M):
+                if not (self.inside_block_ids_.mask[i, j] or points_polar[i, j, 0] < self.tol): # also check if point is at the pole
+                    Q[i, j] = self.calculate_carrier_function_value(block_kinds[i, j], boundary_identifiers[i, j], \
+                                                                    points_polar[i, j, 0], points_polar[i, j, 1], k, phi_ij[i, j, :, 0], \
+                                                                    phi_ij[i, j, :, 1], alpha_ij[i, j])
+                    R[i, j] = self.calculate_poisson_kernel_value(block_kinds[i, j], nu_ij[i, j, 0], nu_ij[i, j, 1], \
+                                                                    points_polar[i, j, 0], r0_[i, j], points_polar[i, j, 1], \
+                                                                    eta_ij[i, j], alpha_ij[i, j])
+        return Q, R
+    
+    def get_inner_points_in_polar_coordinates(self):
+        # Get the inner points in polar coordinates
+        points = self.cartesian_grid - self.center_mu[self.inside_block_ids_]
+        ref_theta = self.ref_theta[self.inside_block_ids_]
+        return np.ma.array(np.stack([np.linalg.norm(points, axis=2), 
+                                        np.mod(np.arctan2(points[:, :, 1], points[:, :, 0]) - \
+                                            ref_theta, 2 * np.pi)], axis=2),
+                            mask=points.mask)
+
+    def initialize_solution(self):
         """
         Initialize the solution data structures for the block grid method.
-        This method sets up the following instance variables:
-        - alpha_mu: Dictionary mapping block IDs to angle parameters (block angle / pi)
-        - n_mu: Dictionary mapping block IDs to number of angular divisions
-        - beta_mu: Dictionary mapping block IDs to angular step sizes
-        - theta_mu: Dictionary mapping block IDs to lists of angular coordinates
-        - quantized_boundaries: Dictionary mapping block IDs to lists of boundary points
-        - quantized_inner_points: Dictionary mapping block IDs to lists of interior points
-        - solution: Dictionary mapping point coordinates to solution values (initialized to 0)
-
-        The method calculates block parameters and quantizes each block into a grid of points
-        based on the delta spacing parameter. Points are stored in global coordinates.
 
         Returns:
             None
         """
-        self.alpha_mu = {}
-        self.n_mu = {}
-        self.beta_mu = {}
-        self.theta_mu = {}
-        self.quantized_boundary_points = {}
-        self.boundary_estimates = {}
-        
-        # Calculate parameters for each block
+        # make parameters!
+        self.alpha_mu = np.zeros(len(self.blocks))
+        self.r0_mu = np.zeros(len(self.blocks))
+        self.r_mu = np.zeros(len(self.blocks))
+        self.center_mu = np.zeros((len(self.blocks), 2))
+        self.ref_theta = np.zeros(len(self.blocks))
+        self.block_type = np.zeros(len(self.blocks), dtype=int)
+
+        num_bounds = [len(x) for x in self.boundary_conditions]
+        max_bounds = max(num_bounds)
+        self.phi_ij = np.ma.masked_array(np.zeros((len(self.blocks), max_bounds, 2)), mask=False)
+        self.block_nu = np.ma.masked_array(np.zeros((len(self.blocks), 2), dtype=bool), mask=False)
         for blk in self.blocks:
-            alpha, n, beta, theta = self.initialize_parameters_for_block_grid_method(blk)
-            boundary_points = self.quantize_block(blk, theta)
-            self.alpha_mu[blk.id_] = alpha
-            self.n_mu[blk.id_] = n
-            self.beta_mu[blk.id_] = beta
-            self.theta_mu[blk.id_] = theta
-            self.quantized_boundary_points[blk.id_] = boundary_points
-        # Initialize solution values for all points
-        for blk_id in self.quantized_boundary_points.keys():
-            # Initialize boundary points
-            for point in self.quantized_boundary_points[blk_id]:
-                self.boundary_estimates[tuple(point)] = 0.0
-
-    def initialize_parameters_for_block_grid_method(self, block: block):
-        # see page 35 in the book, equations (4.1), (4.2), and (4.3)
-        alpha_mu = block.angle / np.pi
-        n_mu = np.max([4, int(np.abs(self.n * alpha_mu))])
-        beta_mu = block.angle / n_mu
-        theta_mu = [(k - 0.5) * beta_mu for k in range(1, n_mu + 1)]
-        return alpha_mu, n_mu, beta_mu, theta_mu
-    
-    def quantize_block(self, block : block, theta_mu : list[float]):
-        # Generate inner points by varying r and theta
-        q_boundary_points = []
-        for theta in theta_mu:
-            q_boundary_points.append(self.from_block_polar_coordinates(block, block.r0, theta)) # convert to global coordinates
-        return q_boundary_points
-
-    def to_block_polar_coordinates(self, block: block, point : np.ndarray):
-        # Get the polar coordinates of the point relative to the block's center
-        v = point - block.center
-        r = np.linalg.norm(v)
-        # Calculate angle relative to reference vector
-        theta = np.arctan2(v[1], v[0])
-        
-        # Choose reference vector based on block kind
-        if block.block_kind == 1:  # First kind - use edge_j as reference
-            theta = theta - np.arctan2(self.poly.edges[block.edge_j_index][1], self.poly.edges[block.edge_j_index][0])
-        elif block.block_kind == 2:  # Second kind - use edge_i as reference 
-            theta = theta - np.arctan2(self.poly.edges[block.edge_i_index][1], self.poly.edges[block.edge_i_index][0])   
-
-        # Normalize theta to [0, 2*pi]
-        while theta < 0:
-            theta += 2*np.pi
-        while theta >= 2*np.pi:
-            theta -= 2*np.pi
+            self.alpha_mu[blk.id_] = blk.angle / np.pi
+            self.r0_mu[blk.id_] = blk.r0
+            self.center_mu[blk.id_] = blk.center
+            self.r_mu[blk.id_] = blk.length
+            self.block_type[blk.id_] = blk.block_kind
+            if blk.block_kind == 1:
+                self.ref_theta[blk.id_] = np.arctan2(self.poly.edges[blk.edge_j_index][1], self.poly.edges[blk.edge_j_index][0])
+                self.phi_ij[blk.id_, :num_bounds[blk.edge_i_index], 0] = self.boundary_conditions[blk.edge_i_index]
+                self.phi_ij.mask[blk.id_, num_bounds[blk.edge_i_index]:, 0] = True
+                self.phi_ij[blk.id_, :num_bounds[blk.edge_j_index], 1] = self.boundary_conditions[blk.edge_j_index]
+                self.phi_ij.mask[blk.id_, num_bounds[blk.edge_j_index]:, 1] = True
+                self.block_nu[blk.id_, 0] = self.is_dirichlet[blk.edge_i_index]
+                self.block_nu[blk.id_, 1] = self.is_dirichlet[blk.edge_j_index]
+            elif blk.block_kind == 2:
+                self.ref_theta[blk.id_] = np.arctan2(self.poly.edges[blk.edge_i_index][1], self.poly.edges[blk.edge_i_index][0])
+                self.phi_ij[blk.id_, :num_bounds[blk.edge_i_index], 0] = self.boundary_conditions[blk.edge_i_index]
+                self.phi_ij.mask[blk.id_, num_bounds[blk.edge_i_index]:, 0] = True
+                self.phi_ij.mask[blk.id_, :, 1] = True
+                self.block_nu[blk.id_, 0] = self.is_dirichlet[blk.edge_i_index]
+                self.block_nu.mask[blk.id_, 1] = True
+            else:
+                self.block_nu.mask[blk.id_, :] = True
+                self.phi_ij.mask[blk.id_, :, :] = True
             
-        return r, theta
-    
-    def from_block_polar_coordinates(self, block: block, r : float, theta : float):
-        # Normalize theta to [-pi, pi]
-        while theta > np.pi:
-            theta -= 2*np.pi
-        while theta <= -np.pi:
-            theta += 2*np.pi
-        # Adjust theta based on block kind and reference vector
-        if block.block_kind == 1:  # First kind - use edge_j as reference
-            theta = theta + np.arctan2(self.poly.edges[block.edge_j_index][1], self.poly.edges[block.edge_j_index][0])
-        elif block.block_kind == 2:  # Second kind - use edge_i as reference
-            theta = theta + np.arctan2(self.poly.edges[block.edge_i_index][1], self.poly.edges[block.edge_i_index][0])
-        # Convert polar coordinates to Cartesian coordinates
-        x = block.center[0] + r * np.cos(theta)
-        y = block.center[1] + r * np.sin(theta)
-        return np.array([x, y])
+        self.n_mu = np.maximum(4, np.floor(self.n * self.alpha_mu))
+        self.beta_mu = np.pi * np.divide(self.alpha_mu, self.n_mu)
+        # Create array with max size and mask values beyond n_mu for each block
+        max_n = int(np.max(self.n_mu))
+        self.theta_mu = np.ma.masked_array(
+            np.matmul(self.beta_mu.reshape(-1, 1),
+                     (np.arange(1, max_n + 1) - 0.5).reshape(1, -1)),
+            mask=np.array([k >= self.n_mu[i] for i, k in 
+                          np.ndindex(len(self.blocks), max_n)]).reshape(len(self.blocks), -1)
+        )
+        # Calculate parameters for each block
 
-    def find_tau_block_for_P_mu(self, point_mu : np.ndarray, id_mu : int):
-        # Find the block that contains the point_mu that lies on the boundary of the extended block T_mu, but
+        # Initialize array for quantized boundary points with same shape as theta_mu
+        self.quantized_boundary_points = np.repeat(self.theta_mu[:, :, np.newaxis], 2, axis = 2)
+        self.quantized_boundary_points.data[:, :, 0] = np.repeat(self.r0_mu.reshape(-1, 1), max_n, axis=1)
+        
+        self.boundary_estimates = np.ma.zeros_like(self.theta_mu)
+        self.quantized_boundary_points = self.convert_to_cartesian_coordinates(self.quantized_boundary_points)
+
+        # Find the tau block ids for the P_mu points
+        self.tau_block_ids = self.find_tau_block_ids_for_P_mu()
+
+        # Create array of tau block centers with same shape as theta_mu
+        self.tau_block_centers = np.ma.array(
+            self.center_mu[self.tau_block_ids],
+            mask=np.repeat(self.tau_block_ids.mask[:, :, np.newaxis], 2, axis=2)
+        )
+
+        # Create array of ref theta with same shape as theta_mu
+        self.tau_ref_thetas = np.ma.array(
+            self.ref_theta[self.tau_block_ids],
+            mask=self.tau_block_ids.mask
+        )
+
+        # Find the tau block polar coordinates for the P_mu points
+        self.tau_block_polar_coordinates = self.find_tau_block_polar_coordinates()
+
+        self.poisson_kernel_values = self.find_poisson_kernel_values()
+        
+        if self.verify_solution:
+            assert self.verify_unique_solution(self.poisson_kernel_values), \
+                "No unique solution exists for the natural number parameter n = " + str(self.n)
+
+        self.tau_carrier_function_values, self.mu_carrier_function_values = self.find_carrier_function_values_on_blocks()
+        
+    def convert_to_cartesian_coordinates(self, points : np.ma.MaskedArray):
+        # Convert the points from polar coordinates to Cartesian coordinates
+        return np.ma.array(np.stack([self.center_mu[:, 0][:, np.newaxis] + points[:, :, 0] * \
+                                        np.cos(points[:, :, 1] + self.ref_theta[:, np.newaxis]),
+                                     self.center_mu[:, 1][:, np.newaxis] + points[:, :, 0] * \
+                                        np.sin(points[:, :, 1] + self.ref_theta[:, np.newaxis])], 
+                                   axis=-1),
+                          mask=points.mask)
+    
+    def convert_to_polar_coordinates(self, points : np.ma.MaskedArray):
+        # Convert the points from Cartesian coordinates to polar coordinates
+        points = points - self.center_mu[:, np.newaxis, :]
+        return np.ma.array(np.stack([np.linalg.norm(points, axis=2), 
+                                     np.mod(np.arctan2(points[:, :, 1], points[:, :, 0]) - \
+                                        self.ref_theta[:, np.newaxis], 2 * np.pi)], axis=2),
+                          mask=points.mask)
+    
+    def find_tau_block_polar_coordinates(self):
+        # Find the tau block polar coordinates for the P_mu points
+        points = self.quantized_boundary_points - self.tau_block_centers
+        return np.ma.array(np.stack([np.linalg.norm(points, axis=2), 
+                                     np.mod(np.arctan2(points[:, :, 1], points[:, :, 0]) - \
+                                        self.tau_ref_thetas, 2 * np.pi)], axis=2),
+                          mask=points.mask)
+
+    def find_tau_block_ids_for_P_mu(self):
+        # Find the block ids that contain the point_mu that lies on the boundary of the extended block T_mu, but
         # also lies inside basic block T_tau. See equation (4.4) for the definition of T_mu and T_tau.
         # id_mu is the id of the block T_mu
-        # Find all blocks that contain point_mu, excluding block id_mu
-        containing_block_ids = []
-        for blk in self.blocks:
-            if blk.id_ != id_mu:
-                # Calculate distance from point to block center
-                distance = np.linalg.norm(point_mu - blk.center)
-                # Check if point lies within block radius
-                if distance <= blk.length:
-                    containing_block_ids.append(blk.id_)
-        
-        # Return random id if any blocks found, otherwise None
-        return random.choice(containing_block_ids) if containing_block_ids else None
+        points = np.repeat(self.quantized_boundary_points[np.newaxis, :], len(self.blocks), axis = 0) - \
+            self.center_mu[:, np.newaxis, np.newaxis]
+        dists = np.linalg.norm(points, axis = 3) <= self.r_mu[:, np.newaxis, np.newaxis]
+        # Find the smallest index that is true in the first axis
+        # For each point in quantized_boundary_points, find the first block that contains it
+        tau_block_ids = np.ma.array(np.argmax(dists, axis=0), mask=~np.any(dists, axis=0))
+        return tau_block_ids
 
-    def get_boundary_conditions_in_block_coordinate_system(self, block : block):
-        # Transform the boundary conditions to the block's polar coordinate system with origin at the block's center 
-        # and angle 0 along the block's edge_j direction, this is only relevant to the first and second kind blocks
-        # TODO: Implement higher order boundary conditions
-        if block.block_kind == 1:
-            if len(self.boundary_conditions[block.edge_i_index]) > 1 or len(self.boundary_conditions[block.edge_j_index]) > 1:
-                raise NotImplementedError("The boundary conditions must be a polynomial of order 0")
-            phi_i = self.boundary_conditions[block.edge_i_index]
-            phi_j = self.boundary_conditions[block.edge_j_index]
-            return phi_i, phi_j
-        if block.block_kind == 2:
-            if len(self.boundary_conditions[block.edge_i_index]) > 1:
-                raise NotImplementedError("The boundary conditions must be a polynomial of order 0")
-            phi_i = self.boundary_conditions[block.edge_i_index]
-            return phi_i, None
-        return None, None
-    
-    def get_carrier_function_value_in_block_coordinate_system(self, block : block, r : float, theta : float):
-        # Get the carrier function in the block's polar coordinate system with origin at the block's center 
-        # and angle 0 along the block's edge_j direction
-        # TODO: Implement higher order boundary conditions, and allow other types of boundary conditions
-        # for the carrier functions
-        phi_i, phi_j = self.get_boundary_conditions_in_block_coordinate_system(block)
-        if block.block_kind == 1:
-            if self.is_dirichlet[block.edge_i_index] is True and self.is_dirichlet[block.edge_j_index] is True:
-                # carrier function given by equation (3.2) in the book, below is incomplete function definition
-                return phi_j[0] + ((phi_i[0] - phi_j[0]) / block.angle) * theta
-            elif self.is_dirichlet[block.edge_i_index] is False and self.is_dirichlet[block.edge_j_index] is True:
-                # carrier function given by equation (3.6) in the book
-                raise NotImplementedError("Not implemented, see equation (3.6) in the book")
-            elif self.is_dirichlet[block.edge_i_index] is True and self.is_dirichlet[block.edge_j_index] is False:
-                # carrier function given by equation (3.9) in the book
-                raise NotImplementedError("Not implemented, see equation (3.9) in the book")
+    def find_carrier_function_values_on_blocks(self):
+        # Find the carrier function values on the blocks
+        tau_carrier_function_values = np.ma.zeros_like(self.theta_mu) # carrier function values on tau blocks for r_taumu, theta_taumu
+        mu_carrier_function_values = np.ma.zeros_like(self.theta_mu) # carrier function values on mu blocks for r_mu, theta_mu
+
+        mu_block_boundary_identifiers = np.squeeze(self.block_nu.dot(np.array([[2], [1]])))
+        tau_block_boundary_identifiers = mu_block_boundary_identifiers[self.tau_block_ids]
+        tau_block_boundary_identifiers.mask = tau_block_boundary_identifiers.mask | self.tau_block_ids.mask
+
+        tau_block_kind_identifiers = np.ma.masked_array(self.block_type[self.tau_block_ids], mask = self.tau_block_ids.mask)
+
+        N, M = tau_carrier_function_values.shape
+
+        k = np.arange(self.phi_ij.shape[1])
+
+        for i in range(N):
+            for j in range(M):
+                # the check for self.tau_block_ids.mask is to deal with improper covering (i.e., not tau block for P_mu)
+                if not (tau_carrier_function_values.mask[i, j] or self.tau_block_ids.mask[i, j]):
+                    tau_id_ = self.tau_block_ids[i, j]
+                    tau_alpha_j = self.alpha_mu[tau_id_]
+                    r_ = self.tau_block_polar_coordinates[i, j, 0]
+                    theta_ = self.tau_block_polar_coordinates[i, j, 1]
+                    a_ = self.phi_ij[tau_id_, :, 0]
+                    b_ = self.phi_ij[tau_id_, :, 1]
+                    tau_carrier_function_values[i, j] = self.calculate_carrier_function_value(tau_block_kind_identifiers[i, j], \
+                                                                 tau_block_boundary_identifiers[i, j], r_, theta_, k, a_, b_, tau_alpha_j)
+        for i in range(N):
+            for j in range(M):
+                if not mu_carrier_function_values.mask[i, j]:
+                    mu_id_ = i
+                    alpha_j = self.alpha_mu[mu_id_]
+                    r_ = self.r0_mu[i]
+                    theta_ = self.theta_mu[i, j]
+                    a_ = self.phi_ij[mu_id_, :, 0]
+                    b_ = self.phi_ij[mu_id_, :, 1]
+                    mu_carrier_function_values[i, j] = self.calculate_carrier_function_value(self.block_type[mu_id_], \
+                                                                 mu_block_boundary_identifiers[mu_id_], r_, theta_, k, a_, b_, alpha_j)
+        return tau_carrier_function_values, mu_carrier_function_values
+
+    def calculate_carrier_function_value(self, block_kind, block_boundary_identifier, r_, theta_, k, a_, b_, alpha_j):
+        if block_kind == 1:
+            # first kind block
+            if block_boundary_identifier == 0:
+                # both edges are Neumann (v_{j-1} = 0, v_{j} = 0)
+                cond_ = (np.abs(np.sin((k + 1) * alpha_j * np.pi)) < self.tol).astype(int)
+                
+                sigma_jk = (k + 1) * ((1 - cond_) * np.sin((k + 1) * alpha_j * np.pi) + \
+                    cond_ * (- alpha_j * np.pi * np.cos((k + 1) * alpha_j * np.pi)))
+                eta_jk = (1 - cond_) * (np.cos((k + 1) * theta_)) + \
+                    cond_ * (theta_ * np.sin((k + 1) * theta_) - np.log(r_) * np.cos((k + 1) * theta_))
+                
+                return np.sum((a_ / sigma_jk) * np.power(r_, k + 1) * eta_jk) + \
+                    np.sum((b_ / (k + 1)) * np.power(r_, k + 1) * \
+                            (np.sin((k + 1) * theta_) + ((k + 1) * np.cos((k + 1) * alpha_j * np.pi) / sigma_jk) * eta_jk))
+                    
+            elif block_boundary_identifier == 1:
+                # edge j-1 is Neumann, edge j is Dirichlet (v_{j-1} = 0, v_{j} = 1)
+                cond_ = (np.abs(np.cos(k * alpha_j * np.pi)) < self.tol).astype(int)
+
+                omega_jk = k * ((1 - cond_) * (- np.cos(k * alpha_j * np.pi)) + \
+                    cond_ * (alpha_j * np.pi * np.sin(k * alpha_j * np.pi)))
+                psi_jk = (1 - cond_) * np.sin(k * theta_) + \
+                    cond_ * (theta_ * np.cos(k * theta_) + np.log(r_) * np.sin(k * theta_))
+                psi_jkp1 = (1 - cond_) * np.sin((k + 1) * theta_) + \
+                    cond_ * (theta_ * np.cos((k + 1) * theta_) + np.log(r_) * np.sin((k + 1) * theta_))
+                kp1 = k[1:]
+                
+                return np.sum((a_ / omega_jk) * np.power(r_, k + 1) * psi_jkp1) + \
+                    b_[0] + np.sum(b_[1:] * np.power(r_, kp1) * \
+                                    (np.cos(kp1 * theta_) - (kp1 * np.sin(kp1 * alpha_j * np.pi) / omega_jk[1:]) * psi_jk[1:]))
+            elif block_boundary_identifier == 2:
+                # edge j-1 is Dirichlet, edge j is Neumann (v_{j-1} = 1, v_{j} = 0)
+                cond_ = (np.abs(np.cos((k + 1) * alpha_j * np.pi)) < self.tol).astype(int)
+                kappa_jk = (1 - cond_) * (np.cos((k + 1) * theta_)) + \
+                    cond_ * (theta_ * np.sin((k + 1) * theta_) - np.log(r_) * np.cos((k + 1) * theta_))
+                kappa_1k = (1 - cond_) * (np.cos((k + 1) * alpha_j * np.pi)) + \
+                    cond_ * (alpha_j * np.pi * np.sin((k + 1) * alpha_j * np.pi) - np.log(1) * np.cos((k + 1) * alpha_j * np.pi))
+                kappa_jkn1 = (1 - cond_) * (np.cos(k * theta_)) + \
+                    cond_ * (theta_ * np.sin(k * theta_) - np.log(r_) * np.cos(k * theta_))
+                kappa_1kn1 = (1 - cond_) * (np.cos(k * alpha_j * np.pi)) + \
+                    cond_ * (alpha_j * np.pi * np.sin(k * alpha_j * np.pi) - np.log(1) * np.cos(k * alpha_j * np.pi))
+                
+                return np.sum((a_ / kappa_1kn1) * np.power(r_, k) * kappa_jkn1) + \
+                    np.sum((b_ / (k + 1)) * np.power(r_, k + 1) * \
+                            (np.sin((k + 1) * theta_) - (np.sin((k + 1) * alpha_j * np.pi) / kappa_1k) * kappa_jk))
             else:
-                # carrier function given by equation (3.4) in the book
-                raise NotImplementedError("Not implemented, see equation (3.4) in the book")
-        elif block.block_kind == 2:
-            # see equation (3.10), with k = 0
-            return phi_i[0] * (self.is_dirichlet[block.edge_i_index] + \
-                             (1 - self.is_dirichlet[block.edge_i_index]) * r * np.sin(theta))
-        else:
-            # see equation (3.11)
-            return 0
-        
-    def get_poisson_kernel_value_in_block_coordinate_system(self, block : block, r : float, theta : float, eta : float):
-        # Get the Poisson kernel in the block's polar coordinate system with origin at the block's center 
-        # and angle 0 along the block's edge_j direction, see page 24 in the book. Also see equations (3.12), (3.13),
-        # (3.14), (3.15), (3.16), (3.17), and (3.18) in the book
-        main_kernel = lambda r1, theta1, eta1: (1 - r1**2) / (2 * np.pi * (1 - 2*r1*np.cos(theta1 - eta1) + r1**2))
+                # both edges are Dirichlet (v_{j-1} = 1, v_{j} = 1)
+                cond_ = (np.abs(np.sin(k * alpha_j * np.pi)) < self.tol).astype(int)
 
-        if block.block_kind == 1:
-            # block of first kind
-            nu_i = int(self.is_dirichlet[block.edge_i_index])
-            nu_j = int(self.is_dirichlet[block.edge_j_index])
-            alpha_j = block.angle / np.pi
-            lambda_j = 1/((2 - nu_i * nu_j - (1 - nu_i) * (1 - nu_j)) * alpha_j)
-            
-            if nu_i == nu_j: # both are equal (3.17), (3,12)
-                return lambda_j * (main_kernel((r / block.r0) ** lambda_j, lambda_j * theta, lambda_j * eta) + \
-                                        (-1)**nu_j * main_kernel((r / block.r0) ** lambda_j, lambda_j * theta, -lambda_j * eta))
-            else: # they are different (3.17), (3.13)
-                return lambda_j * (main_kernel((r / block.r0) ** lambda_j, lambda_j * theta, lambda_j * eta) + \
-                                        (-1)**nu_j * main_kernel((r / block.r0) ** lambda_j, lambda_j * theta, -lambda_j * eta) - \
-                                        (-1)**nu_j * \
-                                        (main_kernel((r / block.r0) ** lambda_j, lambda_j * theta, lambda_j * (np.pi - eta)) + \
-                                        (-1)**nu_j * main_kernel((r / block.r0) ** lambda_j, lambda_j * theta, -lambda_j * (np.pi - eta)))
-                                    )
-        elif block.block_kind == 2:
-            # block of second kind (3.16)
-            m = int(self.is_dirichlet[block.edge_i_index])
-            return main_kernel(r / block.r0, theta, eta) + (-1)**m * (main_kernel(r / block.r0, theta, -eta))
+                zeta_jk = (1 - cond_) * np.sin(k * theta_) + \
+                    cond_ * (theta_ * np.cos(k * theta_) + np.log(r_) * np.sin(k * theta_))
+                zeta_1k = (1 - cond_) * np.sin(k * alpha_j * np.pi) + \
+                    cond_ * (alpha_j * np.pi * np.cos(k * alpha_j * np.pi) + np.log(1) * np.sin(k * alpha_j * np.pi))
+
+                return np.sum((a_ / zeta_1k) * np.power(r_, k) * zeta_jk) + \
+                    np.sum((b_ * np.power(r_, k) * (np.cos(k * theta_) - (np.cos(k * alpha_j * np.pi) / zeta_1k) * zeta_jk)))
+        elif block_kind == 2:
+            # second kind block
+            nu_jq = block_boundary_identifier // 2
+
+            return np.sum(a_ * np.power(r_, k) * \
+                            (nu_jq * (np.cos(k * theta_)) + (1 - nu_jq) * \
+                            r_ * (np.sin((k + 1) * theta_) / (k + 1))))
         else:
-            # block of third kind (3.15)
-            return main_kernel(r / block.r0, theta, eta)
-        
+            # third kind block
+            return 0.0
+   
     def estimate_solution_over_curved_boundaries(self):
         # Estimate the solution over the block curved boundaries using the boundary conditions and the carrier function
         # This is done by iterating over the blocks and estimating the solution over the curved boundaries
         # The iteration is stopped based on the max_iter parameter 
         # see equations (4.14) and (4.15) in the book
-        i = 0
+        iter = 0
+        N, M = self.boundary_estimates.shape
         while True: 
-            for blk in self.blocks:
-                # find the tau block for the current block
-                for point in self.quantized_boundary_points[blk.id_]:
-                    tau_block_id = self.find_tau_block_for_P_mu(point, blk.id_)
-                    if tau_block_id is None:
-                        warnings.warn(f"No tau block found for point {point}", RuntimeWarning)
+            for i in range(N):
+                for j in range(M):
+                    if self.boundary_estimates.mask[i, j] or self.tau_block_ids.mask[i, j]:
                         continue
-                    r_taumu, theta_taumu = self.to_block_polar_coordinates(self.blocks[tau_block_id], point)
-                    sum_ = 0
-                    sum_poisson_kernel = 0
-                    for m in range(self.n_mu[tau_block_id]):
-                        poisson_kernel_value = self.get_poisson_kernel_value_in_block_coordinate_system(self.blocks[tau_block_id], r_taumu, theta_taumu, self.theta_mu[tau_block_id][m])
-                        sum_ += self.beta_mu[tau_block_id] * (self.boundary_estimates[tuple(self.quantized_boundary_points[tau_block_id][m])] - \
-                                                                self.get_carrier_function_value_in_block_coordinate_system(self.blocks[tau_block_id], self.blocks[tau_block_id].length, self.theta_mu[tau_block_id][m])) * \
-                                                                poisson_kernel_value
-                        sum_poisson_kernel += poisson_kernel_value
-                    sum_ = sum_ / max(1, self.beta_mu[tau_block_id] * sum_poisson_kernel)
-                    if np.isnan(sum_):
-                        print(f"Warning: NaN value encountered at point {point}")
-                    self.boundary_estimates[tuple(point)] = self.get_carrier_function_value_in_block_coordinate_system(self.blocks[tau_block_id], r_taumu, theta_taumu) + sum_
 
-            i += 1
-            if i > self.max_iter:
+                    tau_block_id = self.tau_block_ids[i, j]
+                    beta_tau = self.beta_mu[tau_block_id]
+                    poisson_kernel_vector = self.poisson_kernel_values[i, j]
+
+                    self.boundary_estimates[i, j] = self.tau_carrier_function_values[i, j] + \
+                        beta_tau * np.sum((self.boundary_estimates[tau_block_id] - self.mu_carrier_function_values[tau_block_id]) * \
+                                    poisson_kernel_vector / max(1.0, beta_tau * np.sum(poisson_kernel_vector)))
+            iter += 1
+            if iter > self.max_iter:
                 break       
 
+    def find_poisson_kernel_values(self):
+        # Find the poisson kernel vector for the given r_ and theta_, with the given theta_tau array
+        eta_tau = self.theta_mu[self.tau_block_ids]
+        poisson_kernel = np.ma.zeros_like(eta_tau)
+        block_type_tau = self.block_type[self.tau_block_ids]
+        nu_ij = self.block_nu[self.tau_block_ids]
+        alpha_j = self.alpha_mu[self.tau_block_ids]
+        r0_tau = self.r0_mu[self.tau_block_ids]
+        r_ = self.tau_block_polar_coordinates[:, :, 0]
+        theta_ = self.tau_block_polar_coordinates[:, :, 1]
+
+        N, M = self.tau_block_ids.shape
+        for i in range(N):
+            for j in range(M):
+                if self.tau_block_ids.mask[i, j]:
+                    continue
+
+                poisson_kernel[i, j] = self.calculate_poisson_kernel_value(block_type_tau[i, j], nu_ij[i, j, 0], nu_ij[i, j, 1], \
+                                                                           r_[i, j], r0_tau[i, j], theta_[i, j], eta_tau[i, j], alpha_j[i, j])
+        return poisson_kernel
+
+    def verify_unique_solution(self, poisson_kernel_values):
+        # verify the existance of a unique solution for the given poisson kernel values (see lemma 4.2 and (4.12) in the book)
+        epsilon = np.ma.ones_like(self.theta_mu)
+        beta_tau = self.beta_mu[self.tau_block_ids]
+        for _ in range(self.M + 1):
+            epsilon = beta_tau * np.sum(poisson_kernel_values * epsilon[:,:,np.newaxis], axis = 2)
+        
+        if np.max(np.abs(epsilon)) < 1.0:
+            return True
+        else:
+            return False
+
+    def calculate_poisson_kernel_value(self, block_kind, nu_i, nu_j, r_, r0_, theta_, eta_, alpha_j):
+        main_kernel = lambda r1, theta1, eta1: (1 - r1**2) / (2 * np.pi * (1 - 2*r1*np.cos(theta1 - eta1) + r1**2))
+        if block_kind == 1:
+            # block of first kind
+            
+            lambda_j = 1/((2 - nu_i * nu_j - (1 - nu_i) * (1 - nu_j)) * alpha_j)
+            
+            if nu_i == nu_j: # both are equal (3.17), (3,12)
+                return lambda_j * (main_kernel((r_ / r0_) ** lambda_j, lambda_j * theta_, lambda_j * eta_) + \
+                                        (-1)**nu_j * main_kernel((r_ / r0_) ** lambda_j, lambda_j * theta_, -lambda_j * eta_))
+            else: # they are different (3.17), (3.13)
+                return lambda_j * (main_kernel((r_ / r0_) ** lambda_j, lambda_j * theta_, lambda_j * eta_) + \
+                                        (-1)**nu_j * main_kernel((r_ / r0_) ** lambda_j, lambda_j * theta_, -lambda_j * eta_) - \
+                                        (-1)**nu_j * \
+                                        (main_kernel((r_ / r0_) ** lambda_j, lambda_j * theta_, lambda_j * (np.pi - eta_)) + \
+                                        (-1)**nu_j * main_kernel((r_ / r0_) ** lambda_j, lambda_j * theta_, -lambda_j * (np.pi - eta_)))
+                                    )
+        elif block_kind == 2:
+            # block of second kind (3.16)
+            return main_kernel(r_ / r0_, theta_, eta_) + (-1)**nu_i * (main_kernel(r_ / r0_, theta_, -eta_))
+        else:
+            # block of third kind (3.15)
+            return main_kernel(r_ / r0_, theta_, eta_)
+           
     def plot_block_covering(self, ax, uncovered_points = None, show_boundary_conditions = True,
                             show_quantized_boundaries = False):
         # Plot polygon
@@ -382,11 +513,13 @@ class volkovSolver(PDESolver):
                         horizontalalignment='right', verticalalignment='bottom')
                 # Plot quantized boundaries with solution values
                 if show_quantized_boundaries:
-                    for point in self.quantized_boundary_points[block.id_]:
-                        ax.plot(point[0], point[1], 'b.')
-                        if tuple(point) in self.boundary_estimates:
-                            ax.text(point[0], point[1], f'{self.boundary_estimates[tuple(point)]:.2f}', 
-                                   fontsize=8, horizontalalignment='right')
+                    # Get unmasked points for this block
+                    points = self.quantized_boundary_points[block.id_][~self.quantized_boundary_points[block.id_].mask.any(axis=1)]
+                    if len(points) > 0:
+                        ax.plot(points[:, 0], points[:, 1], 'g.')
+                        for j, point in enumerate(points):
+                                ax.text(point[0], point[1], f'{self.boundary_estimates[i, j]:.2f}',
+                                      fontsize=8, horizontalalignment='right')
         
             # Plot second kind blocks (half-disks from edges)
             elif block.block_kind == 2:
@@ -409,11 +542,13 @@ class volkovSolver(PDESolver):
                         horizontalalignment='right', verticalalignment='bottom')
                 # Plot quantized boundaries
                 if show_quantized_boundaries:
-                    for point in self.quantized_boundary_points[block.id_]:
-                        ax.plot(point[0], point[1], 'r.')
-                        if tuple(point) in self.boundary_estimates:
-                            ax.text(point[0], point[1], f'{self.boundary_estimates[tuple(point)]:.2f}',
-                                   fontsize=8, horizontalalignment='right')
+                    # Get unmasked points for this block
+                    points = self.quantized_boundary_points[block.id_][~self.quantized_boundary_points[block.id_].mask.any(axis=1)]
+                    if len(points) > 0:
+                        ax.plot(points[:, 0], points[:, 1], 'g.')
+                        for j, point in enumerate(points):
+                                ax.text(point[0], point[1], f'{self.boundary_estimates[i, j]:.2f}',
+                                      fontsize=8, horizontalalignment='right')
             
             # Plot third kind blocks (interior disks)
             elif block.block_kind == 3:
@@ -435,11 +570,13 @@ class volkovSolver(PDESolver):
                         horizontalalignment='right', verticalalignment='bottom')
                 # Plot quantized boundaries
                 if show_quantized_boundaries:
-                    for point in self.quantized_boundary_points[block.id_]:
-                        ax.plot(point[0], point[1], 'g.')
-                        if tuple(point) in self.boundary_estimates:
-                            ax.text(point[0], point[1], f'{self.boundary_estimates[tuple(point)]:.2f}',
-                                   fontsize=8, horizontalalignment='right')
+                    # Get unmasked points for this block
+                    points = self.quantized_boundary_points[block.id_][~self.quantized_boundary_points[block.id_].mask.any(axis=1)]
+                    if len(points) > 0:
+                        ax.plot(points[:, 0], points[:, 1], 'g.')
+                        for j, point in enumerate(points):
+                                ax.text(point[0], point[1], f'{self.boundary_estimates[i, j]:.2f}',
+                                      fontsize=8, horizontalalignment='right')
 
         if show_boundary_conditions:
             # Plot boundary conditions
@@ -455,9 +592,11 @@ class volkovSolver(PDESolver):
                         rotation=angle)
             
         # Plot uncovered points
-        if uncovered_points:
-            uncovered_points = np.array(uncovered_points)
-            ax.scatter(uncovered_points[:,0], uncovered_points[:,1], c='red', s=1, alpha=0.5)
+        # Get coordinates of unmasked points
+        if uncovered_points is not None:
+            y_coords, x_coords = np.where(~uncovered_points.mask)
+            if len(x_coords) > 0:
+                ax.scatter(x_coords * self.delta, y_coords * self.delta, c='red', s=1, alpha=0.5)
             
         ax.set_aspect('equal')
         ax.grid(True)
@@ -518,10 +657,8 @@ class volkovSolver(PDESolver):
             # Get angle from polygon class
             angle = self.poly.angles[i]
 
-            w = np.array([self.poly.vertices[m % num_vertices] for m in range(i + 1, i + num_vertices - 1)])
-            v = np.array([self.poly.vertices[m % num_vertices] for m in range(i + 2, i + num_vertices)])
-            # NOTE: If distance from all the other edges is not checked, it is known that if the polygon is not convex, 
-            # the blocks of first kind might leak outside the polygon
+            w = np.roll(self.poly.vertices, -i-1, axis = 0)[:num_vertices-2]
+            v = np.roll(self.poly.vertices, -i-2, axis = 0)[:num_vertices-2]
             r0 = self.radial_heuristic * min(self.distances_from_edges(v, w, vertex))
             length = self.radial_heuristic * r0
 
@@ -531,7 +668,6 @@ class volkovSolver(PDESolver):
             self.N += 1
             
             # Check if there exists a gap between the blocks of first kind on previous vertex and current vertex
-            # TODO: if a second kind block is leaking, it could be decomposed into smaller blocks to cover the same gap
             if i == 0: # first vertex, we don't need to check for gaps
                 continue
             prev_vertex = self.poly.vertices[i-1]
@@ -554,8 +690,8 @@ class volkovSolver(PDESolver):
                 else: 
                     start_vertex = prev_vertex + (self.blocks[-2].length - self.blocks[-1].length) * unit_edge_vector
 
-                edge_starts = np.array([self.poly.vertices[m % num_vertices] for m in range(i, i + num_vertices - 1)])
-                edge_ends = np.array([self.poly.vertices[m % num_vertices] for m in range(i + 1, i + num_vertices)])
+                edge_starts = np.roll(self.poly.vertices, -i, axis=0)[:num_vertices-1]
+                edge_ends = np.roll(self.poly.vertices, -(i+1), axis=0)[:num_vertices-1]
                 if d < 2 * radius_half_disk:
                     new_vertex = start_vertex + (radius_half_disk + 0.5 * d) * unit_edge_vector
                     r0_half_disk = self.radial_heuristic * min(self.distances_from_edges(edge_starts, edge_ends, new_vertex))
@@ -568,22 +704,35 @@ class volkovSolver(PDESolver):
                     # Calculate number of second kind blocks needed
                     num_second_kind_blocks = int(np.round((d + radius_half_disk) / (2 *(radius_half_disk - o_rad))))
                     # Add new vertices evenly spaced between prev_vertex and next_vertex
+                    nextj = 0
                     for j in range(num_second_kind_blocks):
+                        if j < nextj:
+                            continue
                         # start adding blocks from the prev_vertex
                         next_loc = min(2 * (j + 1) * (radius_half_disk - o_rad), max_dist)
                         new_vertex = start_vertex + next_loc * unit_edge_vector 
                         max_allowed_radius = self.radial_heuristic * min(self.distances_from_edges(edge_starts, edge_ends, new_vertex))
-                        if max_allowed_radius > r0_half_disk:
-                            second_kind_blocks.append(block(new_vertex, np.pi, radius_half_disk, r0_half_disk, block_kind=2, 
+                        max_radius_ratio = np.floor(self.radial_heuristic * max_allowed_radius / (2*(radius_half_disk - o_rad)))
+                        if max_radius_ratio > 1:
+                            second_kind_blocks.append(block(new_vertex, np.pi, max_allowed_radius * self.radial_heuristic, \
+                                                    max_allowed_radius, block_kind=2, \
                                                     id_=block_id_counter, edge_i_index=edge_i_index, edge_j_index=None)) # second kind block
                             self.L += 1
-                            block_id_counter += 1        
+                            block_id_counter += 1
+                            nextj = nextj + max_radius_ratio
+                        elif max_allowed_radius > r0_half_disk:
+                            second_kind_blocks.append(block(new_vertex, np.pi, radius_half_disk, r0_half_disk, block_kind=2, 
+                                                        id_=block_id_counter, edge_i_index=edge_i_index, edge_j_index=None)) # second kind block
+                            self.L += 1
+                            block_id_counter += 1
+                            nextj = nextj + 1
                         else:
                             num_blocks, new_blocks = self.break_second_kind_block(new_vertex, r0_half_disk, max_allowed_radius, edge_starts, 
                                                                         edge_ends, unit_edge_vector, edge_i_index, block_id_counter)
                             second_kind_blocks.extend(new_blocks)
                             self.L += num_blocks
                             block_id_counter += num_blocks
+                            nextj = nextj + 1
         
         # Check if there exists a gap between the blocks of first kind on last vertex and first vertex
         prev_vertex = self.poly.vertices[-1]
@@ -605,8 +754,8 @@ class volkovSolver(PDESolver):
             else: 
                 start_vertex = prev_vertex + (self.blocks[-1].length - self.blocks[0].length) * unit_edge_vector
 
-            edge_starts = np.array([self.poly.vertices[m % num_vertices] for m in range(0, num_vertices - 1)])
-            edge_ends = np.array([self.poly.vertices[m % num_vertices] for m in range(1, num_vertices)])
+            edge_starts = self.poly.vertices[:num_vertices-1]
+            edge_ends = self.poly.vertices[1:]
             if d < 2 * radius_half_disk:
                 new_vertex = start_vertex + (radius_half_disk + 0.5 * d) * unit_edge_vector
                 r0_half_disk = self.radial_heuristic * min(self.distances_from_edges(edge_starts, edge_ends, new_vertex))
@@ -619,23 +768,35 @@ class volkovSolver(PDESolver):
                 # Calculate number of second kind blocks needed
                 num_second_kind_blocks = int(np.round((d + radius_half_disk) / (2 *(radius_half_disk - o_rad))))
                 # Add new vertices evenly spaced between prev_vertex and next_vertex
+                nextj = 0
                 for j in range(num_second_kind_blocks):
+                    if j < nextj:
+                        continue
                     # start adding blocks from the prev_vertex
                     next_loc = min(2 * (j + 1) * (radius_half_disk - o_rad), max_dist)
                     new_vertex = start_vertex + next_loc * unit_edge_vector 
                     max_allowed_radius = self.radial_heuristic * min(self.distances_from_edges(edge_starts, edge_ends, new_vertex))
-                    if max_allowed_radius > r0_half_disk:
-                        second_kind_blocks.append(block(new_vertex, np.pi, radius_half_disk, r0_half_disk, block_kind=2, 
+                    max_radius_ratio = np.floor(self.radial_heuristic * max_allowed_radius / (2*(radius_half_disk - o_rad)))
+                    if max_radius_ratio > 1:
+                        second_kind_blocks.append(block(new_vertex, np.pi, max_allowed_radius * self.radial_heuristic, \
+                                                max_allowed_radius, block_kind=2, \
                                                 id_=block_id_counter, edge_i_index=edge_i_index, edge_j_index=None)) # second kind block
                         self.L += 1
-                        block_id_counter += 1        
+                        block_id_counter += 1
+                        nextj = nextj + max_radius_ratio
+                    elif max_allowed_radius > r0_half_disk:
+                        second_kind_blocks.append(block(new_vertex, np.pi, radius_half_disk, r0_half_disk, block_kind=2, 
+                                                    id_=block_id_counter, edge_i_index=edge_i_index, edge_j_index=None)) # second kind block
+                        self.L += 1
+                        block_id_counter += 1
+                        nextj = nextj + 1
                     else:
                         num_blocks, new_blocks = self.break_second_kind_block(new_vertex, r0_half_disk, max_allowed_radius, edge_starts, 
                                                                     edge_ends, unit_edge_vector, edge_i_index, block_id_counter)
                         second_kind_blocks.extend(new_blocks)
                         self.L += num_blocks
                         block_id_counter += num_blocks
-
+                        nextj = nextj + 1
         # Insert second kind blocks into self.blocks at their id_ positions
         for blk in second_kind_blocks:
             self.blocks.insert(blk.id_, blk)
@@ -669,7 +830,7 @@ class volkovSolver(PDESolver):
             new_radius = radius_old_block / ratio
             overlap = 1 / (n_min - 1) # minimum overlap possible
             for i in range(n_min):
-                new_vertex = old_vertex + (- radius_old_block + new_radius + 2 * i * overlap * new_radius) * unit_edge_vector
+                new_vertex = old_vertex + (- radius_old_block + new_radius + 2 * i * (1 - overlap) * new_radius) * unit_edge_vector
                 vertices.append(new_vertex)
                 if min(self.distances_from_edges(edge_starts, edge_ends, new_vertex)) < new_radius:
                     done = False
@@ -686,111 +847,93 @@ class volkovSolver(PDESolver):
         return n_min, new_blocks
 
     def find_uncovered_points(self):
-        # Create a fine grid of points
-        x_min, y_min = np.min(self.poly.vertices, axis=0) 
-        x_max, y_max = np.max(self.poly.vertices, axis=0) 
-        x = np.linspace(x_min, x_max, int((x_max - x_min) / self.delta))
-        y = np.linspace(y_min, y_max, int((y_max - y_min) / self.delta))
-        X, Y = np.meshgrid(x, y)
-        points = np.column_stack((X.ravel(), Y.ravel()))
+        # Find points in self.solution that are not covered by any block
+        uncovered_points = self.solution.copy()
+        # Create mask for points covered by blocks
+        covered_mask = np.zeros_like(uncovered_points, dtype=bool)
+        remaining_points = self.cartesian_grid.reshape((-1, 2))
+        X, Y = np.where(~covered_mask)
+            
+        # Check each block for points inside it
+        # Keep track of remaining points to check for next blocks
+        for blk in self.blocks:
+            inside_mask = blk.is_inside(remaining_points)
+            inside_points = remaining_points[inside_mask]
+            self.inside_block_ids_[X[inside_mask], Y[inside_mask]] = blk.id_
+            if len(inside_points) > 0:
+                covered_mask[X[inside_mask], Y[inside_mask]] = True
+                # Remove points that are inside this block from remaining points
+                remaining_points = remaining_points[~inside_mask]
+                X = X[~inside_mask]
+                Y = Y[~inside_mask]
+                if len(remaining_points) == 0:
+                    break
+                    
+        # Update mask to include both points outside polygon and points inside blocks
+        uncovered_points.mask = uncovered_points.mask | covered_mask
+        self.inside_block_ids_.mask = self.solution.mask
         
-        # Find points that are in polygon but not in any block
-        uncovered_points = []
-        for point in points:
-            if self.poly.is_inside(point):
-                covered = False
-                # Check first kind blocks
-                for blk in self.blocks:
-                    if blk.is_inside(point):
-                        covered = True
-                        blk.inner_points.append(point)
-                        break
-                if not covered:
-                    uncovered_points.append(point)
-
         return uncovered_points
 
-    def create_third_kind_blocks(self, uncovered_points : list[np.ndarray]):
+    def create_third_kind_blocks(self, uncovered_points : np.ma.MaskedArray):
         # This function will add blocks of third kind to the list of blocks
         # Convert uncovered points to numpy array for easier manipulation
-        uncovered_points = np.array(uncovered_points)
         self.M = self.L
         
         # Skip if no uncovered points
-        if len(uncovered_points) == 0:
+        if uncovered_points.mask.all():
             return
             
         # Find connected components/contours by clustering points that are within delta distance
-        visited = np.zeros(len(uncovered_points), dtype=bool)
+        visited = uncovered_points.mask
         
         # Create arrays for start and end points of edges
         edge_starts = self.poly.vertices
-        edge_ends = np.vstack([self.poly.vertices[1:], self.poly.vertices[0]])
+        edge_ends = np.roll(self.poly.vertices, -1, axis=0)
         
-        # Randomize order of processing uncovered points
-        indices = np.random.permutation(len(uncovered_points))
+        # Get coordinates of unmasked points
+        y_coords, x_coords = np.where(~uncovered_points.mask)
+        points = np.column_stack((x_coords * self.delta + self.x_min, y_coords * self.delta + self.y_min))
+        
+        # Randomize order of processing points
+        indices = np.random.permutation(len(points))
         for i in indices:
-            if visited[i]:
+            if visited[y_coords[i], x_coords[i]]:
                 continue
                 
             # Get current point as center
-            current_center = uncovered_points[i]
-            visited[i] = True
+            current_center = points[i] + 0.5 * self.delta
+            visited[y_coords[i], x_coords[i]] = True
             
             # Calculate minimum distance from edges to determine radius
             radius = np.min(self.distances_from_edges(edge_starts, edge_ends, current_center))
             
             # Create third kind block with calculated center and radius
-            r0 = self.radial_heuristic * radius 
+            r0 = self.radial_heuristic * radius
             length = self.radial_heuristic * r0
-            new_block = block(current_center, 2 * np.pi, length, r0, block_kind=3, 
+            new_block = block(current_center, 2 * np.pi, length, r0, block_kind=3,
                           id_=self.M)
             
             # Find all points connected to this one
             # Check distances to all unvisited points
-            distances = np.linalg.norm(uncovered_points - current_center, axis=1)
-            neighbors = np.where((distances <= length) & (~visited))[0]
+            distances = np.linalg.norm(points - current_center, axis=1)
+            neighbors = np.where((distances <= length) & (~visited[y_coords, x_coords]))[0]
 
             # Update visited array for neighbors
-            visited[neighbors] = True
+            visited[y_coords[neighbors], x_coords[neighbors]] = True
             # Add neighbors to inner points of the block
-            for neighbor_idx in neighbors:
-                new_block.inner_points.append(uncovered_points[neighbor_idx])
+            self.inside_block_ids_[y_coords[i], x_coords[i]] = self.M
+            self.inside_block_ids_[y_coords[neighbors], x_coords[neighbors]] = self.M
 
             self.blocks.append(new_block)
             self.M += 1
     
-    def plot_gradient(self, ax, solution, N = 50):
+    def plot_gradient(self, ax, decimation_factor = 2, scale = 20):
         # Plot the solution on the given axis
         # Convert solution points and values to grid format for heatmap
-        # Plot the solution on the given axis
-        # Convert solution points and values to grid format for heatmap
-        x_coords = [point[0] for point in solution.keys()]
-        y_coords = [point[1] for point in solution.keys()]
-        values = list(solution.values())
-        
-        # Create regular grid
-        xi = np.linspace(min(x_coords), max(x_coords), N)
-        yi = np.linspace(min(y_coords), max(y_coords), N)
-        xi, yi = np.meshgrid(xi, yi)
-        
-        # Interpolate scattered data to regular grid using scipy's griddata
-        zi = griddata((x_coords, y_coords), values, (xi, yi), method='linear')
-        
-        # Create mask for points outside polygon
-        mask = np.zeros_like(zi, dtype=bool)
-        for i in range(len(xi)):
-            for j in range(len(yi)):
-                point = np.array([xi[i,j], yi[i,j]])
-                # Check if point is inside polygon using ray casting algorithm
-                inside = self.poly.is_inside(point)
-                mask[i,j] = inside
-        
-        # Mask points outside polygon
-        zi_masked = np.ma.masked_array(zi, ~mask)
         
         # Calculate gradients using np.gradient
-        dy, dx = np.gradient(zi_masked)
+        dy, dx = np.gradient(self.solution)
         
         # Normalize the gradient field
         magnitude = np.sqrt(dx**2 + dy**2)
@@ -800,6 +943,6 @@ class volkovSolver(PDESolver):
         dy_norm = dy / magnitude
         
         # Plot normalized vector field using quiver on provided axes
-        ax.quiver(xi[::2, ::2], yi[::2, ::2],
-                 dx_norm[::2, ::2], dy_norm[::2, ::2],
-                 scale=40)  # Reduce scale to make arrows bigger
+        ax.quiver(self.cartesian_grid[:, :, 0][::decimation_factor, ::decimation_factor], self.cartesian_grid[:, :, 1][::decimation_factor, ::decimation_factor],
+                 dx_norm[::decimation_factor, ::decimation_factor], dy_norm[::decimation_factor, ::decimation_factor],
+                 scale=scale)  # Reduce scale to make arrows bigger

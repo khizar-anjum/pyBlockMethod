@@ -77,6 +77,10 @@ class polygon:
             area -= self.vertices[j][0] * self.vertices[i][1]
         return abs(area) / 2.0
     
+    def perimeter(self):
+        # Calculate the perimeter of the polygon
+        return np.sum(np.linalg.norm(self.edges, axis=1))
+    
     def verify_convexity(self):
         # Check if the polygon is convex
         # A polygon is convex if all interior angles are less than 180 degrees
@@ -105,18 +109,52 @@ class polygon:
         # Positive signed area means counterclockwise ordering
         return signed_area > 0
 
-    def is_inside(self, point):
-        # Ray casting algorithm to determine if point is inside polygon
-        x, y = point
-        inside = False
-        j = len(self.vertices) - 1
+    def is_inside(self, points : np.ndarray):
+        # assume that points is a numpy array of shape (N, 2)
+        # Fully vectorized ray tracing algorithm for point-in-polygon test
+        # Convert single point to array if needed
+        points = np.atleast_2d(points)
         
-        for i in range(len(self.vertices)):
-            if ((self.vertices[i][1] > y) != (self.vertices[j][1] > y) and
-                (x < (self.vertices[j][0] - self.vertices[i][0]) * (y - self.vertices[i][1]) /
-                     (self.vertices[j][1] - self.vertices[i][1]) + self.vertices[i][0])):
-                inside = not inside
-            j = i
-            
+        # Get edges by pairing consecutive vertices
+        edges = np.vstack((self.vertices, self.vertices[0]))
+        edge_starts = edges[:-1]
+        edge_ends = edges[1:]
+        
+        # Expand dimensions to allow broadcasting
+        # points shape: (n_points, 2)
+        # edge_starts shape: (n_edges, 2) -> (n_edges, 1, 2)
+        # edge_ends shape: (n_edges, 2) -> (n_edges, 1, 2)
+        edge_starts = edge_starts[:, np.newaxis, :]
+        edge_ends = edge_ends[:, np.newaxis, :]
+        
+        # Get vectors from edge start to point and edge start to end
+        v1 = points - edge_starts  # Shape: (n_edges, n_points, 2)
+        v2 = edge_ends - edge_starts  # Shape: (n_edges, 1, 2)
+        
+        # Check if points are above/below each edge
+        above = (points[:, 1] >= edge_starts[:, :, 1])  # Shape: (n_edges, n_points)
+        below = (points[:, 1] < edge_ends[:, :, 1])  # Shape: (n_edges, n_points)
+        # Or vice versa
+        above_flip = (points[:, 1] >= edge_ends[:, :, 1])
+        below_flip = (points[:, 1] < edge_starts[:, :, 1])
+        
+        # Find edges that could intersect with ray
+        possible = (above & below) | (above_flip & below_flip)  # Shape: (n_edges, n_points)
+        
+        # Calculate intersection x coordinate where possible
+        # Avoid division by zero by masking
+        with np.errstate(divide='ignore', invalid='ignore'):
+            t = v1[:, :, 1] / v2[:, :, 1]  # Shape: (n_edges, n_points)
+            intersect_x = edge_starts[:, :, 0] + t * v2[:, :, 0]  # Shape: (n_edges, n_points)
+        
+        # Count valid intersections to the right of each point
+        valid_intersections = (intersect_x > points[:, 0]) & possible
+        intersections = np.sum(valid_intersections, axis=0)  # Shape: (n_points,)
+        
+        # Point is inside if number of intersections is odd
+        inside = intersections % 2 == 1
+        
+        # Return single bool if input was single point
+        if len(points) == 1:
+            return inside[0]
         return inside
-    
