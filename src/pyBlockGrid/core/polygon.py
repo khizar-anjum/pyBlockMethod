@@ -42,7 +42,11 @@ class polygon:
         for i in range(len(self.vertices)):
             prev_vertex = self.vertices[i-1]
             next_vertex = self.vertices[(i+1) % len(self.vertices)]
-            angle = np.arctan2(np.cross(next_vertex - self.vertices[i], prev_vertex - self.vertices[i]), np.dot(next_vertex - self.vertices[i], prev_vertex - self.vertices[i]))
+            v1 = next_vertex - self.vertices[i]
+            v2 = prev_vertex - self.vertices[i]
+            # For 2D vectors, cross product is v1[0]*v2[1] - v1[1]*v2[0]
+            cross_prod = v1[0]*v2[1] - v1[1]*v2[0]
+            angle = np.arctan2(cross_prod, np.dot(v1, v2))
             # Adjust for obtuse angles - arctan2 returns values in [-pi, pi]
             if angle < 0:
                 angle += 2 * np.pi  # Convert negative angles to [0, 2pi] range
@@ -93,7 +97,9 @@ class polygon:
         edges = np.roll(self.vertices, -1, axis=0) - self.vertices
         
         # Calculate cross products between consecutive edges
-        cross_products = np.cross(edges, np.roll(edges, -1, axis=0))
+        # For 2D vectors, cross product is v1[0]*v2[1] - v1[1]*v2[0]
+        next_edges = np.roll(edges, -1, axis=0)
+        cross_products = edges[:, 0] * next_edges[:, 1] - edges[:, 1] * next_edges[:, 0]
         
         # Check if all cross products have the same sign
         return np.all(cross_products >= 0) or np.all(cross_products <= 0)
@@ -105,7 +111,8 @@ class polygon:
         signed_area = 0
         for i in range(n):
             j = (i + 1) % n
-            signed_area += np.cross(self.vertices[i], self.vertices[j])
+            # For 2D vectors, cross product is v1[0]*v2[1] - v1[1]*v2[0]
+            signed_area += self.vertices[i][0] * self.vertices[j][1] - self.vertices[i][1] * self.vertices[j][0]
         # Positive signed area means counterclockwise ordering
         return signed_area > 0
 

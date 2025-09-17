@@ -587,7 +587,7 @@ class volkovSolver(PDESolver):
                 edge = self.poly.edges[i]
                 angle = np.arctan2(edge[1], edge[0]) * 180/np.pi
                 # Add boundary condition value as text, rotated to match edge direction
-                ax.text(midpoint[0], midpoint[1], f'$\phi_{{ {i+1} }} = {self.boundary_conditions[i]}$',
+                ax.text(midpoint[0], midpoint[1], f'$\\phi_{{ {i+1} }} = {self.boundary_conditions[i]}$',
                         horizontalalignment='left', verticalalignment='top',
                         rotation=angle)
             

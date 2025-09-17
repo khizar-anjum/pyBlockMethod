@@ -112,7 +112,7 @@ def plot_3by3_solution_steps(poly_array, boundary_conditions_array, is_dirichlet
                                      max_iter=max_iter, radial_heuristic=radial_heuristics_iter[i]))
         solution = solver_array[i].solve(plot=False, verbose=True)
         solutions.append(solution)
-        solution_values.extend(list(solution.values()))
+        solution_values.extend(solution.compressed().tolist())
     
     # Get common value range for colormap
     vmin, vmax = min(solution_values), max(solution_values)
@@ -137,11 +137,11 @@ def plot_3by3_solution_steps(poly_array, boundary_conditions_array, is_dirichlet
     # Plot solution heatmaps
     for i in range(len(solutions)):
         if i == 0:
-            solver_array[i].plot_solution(ax=ax2a, solution=solutions[i], vmin=vmin, vmax=vmax)
+            solver_array[i].plot_solution(ax=ax2a, vmin=vmin, vmax=vmax)
         elif i == 1:
-            solver_array[i].plot_solution(ax=ax2b, solution=solutions[i], vmin=vmin, vmax=vmax)
+            solver_array[i].plot_solution(ax=ax2b, vmin=vmin, vmax=vmax)
         else:
-            solver_array[i].plot_solution(ax=ax2c, solution=solutions[i], vmin=vmin, vmax=vmax)
+            solver_array[i].plot_solution(ax=ax2c, vmin=vmin, vmax=vmax)
     
     ax2a.set_aspect('equal')
     ax2b.set_aspect('equal')
@@ -151,11 +151,11 @@ def plot_3by3_solution_steps(poly_array, boundary_conditions_array, is_dirichlet
     # Plot gradients
     for i in range(len(solutions)):
         if i == 0:
-            solver_array[i].plot_gradient(ax=ax3a, solution=solutions[i])
+            solver_array[i].plot_gradient(ax=ax3a)
         elif i == 1:
-            solver_array[i].plot_gradient(ax=ax3b, solution=solutions[i])
+            solver_array[i].plot_gradient(ax=ax3b)
         else:
-            solver_array[i].plot_gradient(ax=ax3c, solution=solutions[i])
+            solver_array[i].plot_gradient(ax=ax3c)
     
     ax3a.set_aspect('equal')
     ax3b.set_aspect('equal')

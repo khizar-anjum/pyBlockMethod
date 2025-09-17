@@ -44,7 +44,7 @@ def test_solver_basic(square_polygon, boundary_conditions, is_dirichlet, solver_
     
     solution = solver.solve(verbose=False)
     assert len(solution) > 0
-    assert all(isinstance(val, float) for val in solution.values())
+    assert all(isinstance(val, (float, np.floating)) for val in solution.compressed())
 
 def test_block_covering(square_polygon, boundary_conditions, is_dirichlet, solver_params):
     solver = volkovSolver(
