@@ -35,7 +35,7 @@ def main():
     
     # Test assertions
     assert len(solution) > 0, "Solution should contain values"
-    assert all(isinstance(val, float) for val in solution.values()), "All solution values should be floats"
+    assert all(isinstance(val, (float, np.floating)) for val in solution.compressed()), "All solution values should be floats"
     
     # Solve and plot
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
@@ -46,11 +46,11 @@ def main():
     ax1.set_title('Block Covering')
     
     # Solve and plot solution
-    solver.plot_solution(ax=ax2, solution=solution)
+    solver.plot_solution(ax=ax2)
     ax2.set_title('Temperature Distribution')
     
     # Plot gradient (heat flow)
-    solver.plot_gradient(ax=ax3, solution=solution)
+    solver.plot_gradient(ax=ax3)
     ax3.set_title('Temperature Gradient')
     
     plt.tight_layout()

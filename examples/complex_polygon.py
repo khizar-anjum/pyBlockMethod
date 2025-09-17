@@ -66,11 +66,11 @@ def main():
     axes[0, 1].set_title('Block Covering')
     
     # Plot solution
-    solver.plot_solution(axes[1, 0], solution)
+    solver.plot_solution(axes[1, 0])
     axes[1, 0].set_title('Temperature Distribution')
     
     # Plot gradient
-    solver.plot_gradient(axes[1, 1], solution)
+    solver.plot_gradient(axes[1, 1])
     axes[1, 1].set_title('Heat Flow')
     
     plt.tight_layout()

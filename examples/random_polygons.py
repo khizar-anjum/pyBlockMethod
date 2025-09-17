@@ -50,10 +50,10 @@ def main():
         solver.plot_block_covering(axes[0, col])
         axes[0, col].set_title(f'{n} Vertices: Block Covering')
         
-        solver.plot_solution(axes[1, col], solution)
+        solver.plot_solution(axes[1, col])
         axes[1, col].set_title('Temperature Distribution')
         
-        solver.plot_gradient(axes[2, col], solution)
+        solver.plot_gradient(axes[2, col])
         axes[2, col].set_title('Heat Flow')
     
     plt.tight_layout()
