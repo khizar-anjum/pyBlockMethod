@@ -3,6 +3,13 @@
 ## Overview
 This project implements the Volkov Method for solving Laplace equations on polygonal domains, based on E.A. Volkov's book "Block Method for Solving the Laplace Equation and for Constructing Conformal Mappings (1994)".
 
+## Important: Virtual Environment
+**Always use the virtual environment when running code:**
+```bash
+source venv/bin/activate  # Activate the venv first
+python examples/script.py  # Then run scripts
+```
+
 ## Directory Structure
 
 ### Root Level
