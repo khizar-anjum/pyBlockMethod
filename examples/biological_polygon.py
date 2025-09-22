@@ -398,6 +398,7 @@ def main():
     ax.set_yticks([])
     ax.set_xlabel('')
     ax.set_ylabel('')
+    # plt.ylim(0, 35)
     ax.set_aspect('equal')
 
     # Use axes divider to create colorbar with exact same height as plot
