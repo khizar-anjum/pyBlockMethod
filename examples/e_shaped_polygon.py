@@ -44,8 +44,8 @@ def main():
         delta=0.05,  # Grid spacing
         n=50,        # Number of angular divisions
         max_iter=10,  # Maximum iterations
-        overlap_heuristic = 0.3,
-        radial_heuristic = 0.9,
+        overlap_heuristic = 0.1,
+        radial_heuristic = 0.85,
     )
 
     # Solve and get solution

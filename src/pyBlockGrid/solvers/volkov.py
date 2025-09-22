@@ -646,15 +646,13 @@ class volkovSolver(PDESolver):
         current_edge = self.poly.edges[current_edge_index]
         inward_normal = self.get_edge_inward_normal(current_edge)
 
-        # Filter edges - keep those with at least one endpoint in forward hemisphere
-        keep_mask = np.zeros(len(v), dtype=bool)
-        for i in range(len(v)):
-            # Check if edge endpoints are in forward hemisphere
-            v_dot = np.dot(v[i] - p, inward_normal)
-            w_dot = np.dot(w[i] - p, inward_normal)
-            # Keep edge if at least one endpoint is forward (with small tolerance)
-            if v_dot > -1e-10 or w_dot > -1e-10:
-                keep_mask[i] = True
+        # Vectorized calculation of dot products
+        # v_dots shape: (n_edges,), w_dots shape: (n_edges,)
+        v_dots = np.dot(v - p, inward_normal)
+        w_dots = np.dot(w - p, inward_normal)
+        
+        # Keep edges with at least one endpoint in forward hemisphere (with small tolerance)
+        keep_mask = (v_dots > -1e-10) | (w_dots > -1e-10)
 
         # Calculate distances only to filtered edges
         if np.any(keep_mask):
@@ -718,11 +716,15 @@ class volkovSolver(PDESolver):
 
                 edge_starts = np.roll(self.poly.vertices, -i, axis=0)[:num_vertices-1]
                 edge_ends = np.roll(self.poly.vertices, -(i+1), axis=0)[:num_vertices-1]
-                if d < 2 * radius_half_disk:
-                    new_vertex = start_vertex + (radius_half_disk + 0.5 * d) * unit_edge_vector
-                    r0_half_disk = self.radial_heuristic * min(self.distances_from_edges(edge_starts, edge_ends, new_vertex))
-                    radius_half_disk = self.radial_heuristic * r0_half_disk
-                    second_kind_blocks.append(block(new_vertex, np.pi, radius_half_disk, r0_half_disk, block_kind=2,
+
+                # Calculate actual constrained radius for a single block placement
+                tentative_vertex = start_vertex + (radius_half_disk + 0.5 * d) * unit_edge_vector
+                actual_r0 = self.radial_heuristic * min(self.distances_from_edges_filtered(edge_starts, edge_ends, tentative_vertex, edge_i_index))
+                actual_radius = self.radial_heuristic * actual_r0
+
+                if d < 2 * actual_radius:
+                    # Single block can cover the gap with actual constrained radius
+                    second_kind_blocks.append(block(tentative_vertex, np.pi, actual_radius, actual_r0, block_kind=2,
                                                 id_=block_id_counter, edge_i_index=edge_i_index, edge_j_index=None)) # second kind block
                     self.L += 1
                     block_id_counter += 1
@@ -782,11 +784,15 @@ class volkovSolver(PDESolver):
 
             edge_starts = self.poly.vertices[:num_vertices-1]
             edge_ends = self.poly.vertices[1:]
-            if d < 2 * radius_half_disk:
-                new_vertex = start_vertex + (radius_half_disk + 0.5 * d) * unit_edge_vector
-                r0_half_disk = self.radial_heuristic * min(self.distances_from_edges(edge_starts, edge_ends, new_vertex))
-                radius_half_disk = self.radial_heuristic * r0_half_disk
-                second_kind_blocks.append(block(new_vertex, np.pi, radius_half_disk, r0_half_disk, block_kind=2,
+
+            # Calculate actual constrained radius for a single block placement
+            tentative_vertex = start_vertex + (radius_half_disk + 0.5 * d) * unit_edge_vector
+            actual_r0 = self.radial_heuristic * min(self.distances_from_edges_filtered(edge_starts, edge_ends, tentative_vertex, edge_i_index))
+            actual_radius = self.radial_heuristic * actual_r0
+
+            if d < 2 * actual_radius:
+                # Single block can cover the gap with actual constrained radius
+                second_kind_blocks.append(block(tentative_vertex, np.pi, actual_radius, actual_r0, block_kind=2,
                                             id_=block_id_counter, edge_i_index=edge_i_index, edge_j_index=None)) # second kind block
                 self.L += 1
                 block_id_counter += 1
@@ -858,7 +864,7 @@ class volkovSolver(PDESolver):
             for i in range(n_min):
                 new_vertex = old_vertex + (- radius_old_block + new_radius + 2 * i * (1 - overlap) * new_radius) * unit_edge_vector
                 vertices.append(new_vertex)
-                if min(self.distances_from_edges(edge_starts, edge_ends, new_vertex)) < new_radius:
+                if min(self.distances_from_edges_filtered(edge_starts, edge_ends, new_vertex, edge_i_index)) < new_radius:
                     done = False
                     break
             if not done:
