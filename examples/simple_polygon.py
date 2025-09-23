@@ -1,10 +1,10 @@
 import numpy as np
-from pyBlockGrid import LaplaceEquationSolver, Polygon
+from pyBlockGrid import volkovSolver, polygon
 
 def main():
     # Example polygon
     vertices = np.array([[0, 0], [2, 0], [2, 1], [1, 1], [1, 2], [0, 2]])
-    poly = Polygon(vertices)
+    poly = polygon(vertices)
     
     # Boundary conditions
     boundary_conditions = [[0.0] for _ in range(len(vertices))]
@@ -14,7 +14,7 @@ def main():
     is_dirichlet = [True for _ in range(len(vertices))]
     
     # Solve
-    solver = LaplaceEquationSolver(
+    solver = volkovSolver(
         poly=poly,
         boundary_conditions=boundary_conditions,
         is_dirichlet=is_dirichlet,
@@ -29,7 +29,7 @@ def main():
     import matplotlib.pyplot as plt
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
     solver.plot_block_covering(ax=ax1)
-    solver.plot_solution(ax=ax2, solution=solution)
+    solver.plot_solution(ax=ax2)
     plt.show()
 
 if __name__ == "__main__":

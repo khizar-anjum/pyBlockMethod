@@ -3,6 +3,8 @@
 ## Overview
 The `volkovSolver` class implements E.A. Volkov's block grid method for solving the Laplace equation on arbitrary polygonal domains. This method provides high-accuracy numerical solutions for boundary value problems with mixed Dirichlet/Neumann conditions.
 
+**REFACTORING STATUS**: ✅ **COMPLETED** - The monolithic 980-line implementation has been successfully refactored into a modular 484-line orchestrator that delegates to specialized mathematical and algorithmic modules while maintaining complete backward compatibility.
+
 ## Mathematical Foundation
 
 ### Problem Formulation
@@ -16,6 +18,8 @@ Solves the boundary value problem:
 ## Core Algorithm Steps
 
 ### 1. Block Covering (`find_block_covering`)
+**Implementation**: Delegates to `BlockCovering` class in `core/block_covering.py`
+
 Creates a covering of the polygonal domain using three types of blocks:
 
 #### First Kind Blocks (Vertices)
@@ -23,6 +27,7 @@ Creates a covering of the polygonal domain using three types of blocks:
 - Angle equals interior angle at vertex
 - Radius determined by distance to non-adjacent edges
 - Number denoted as N
+- **Implementation**: `BlockCovering._create_first_kind_blocks()`
 
 #### Second Kind Blocks (Edges)
 - Half-disks centered on polygon edges
@@ -30,51 +35,82 @@ Creates a covering of the polygonal domain using three types of blocks:
 - Adaptive sizing to prevent overlap
 - Can be broken into smaller blocks if needed
 - Number denoted as L (includes N)
+- **Implementation**: `BlockCovering._create_second_kind_blocks()`
 
 #### Third Kind Blocks (Interior)
 - Full disks covering remaining interior points
 - Placed using greedy algorithm
 - Size limited by distance to edges
 - Number denoted as M (total blocks)
+- **Implementation**: `BlockCovering._create_third_kind_blocks()`
 
 ### 2. Solution Initialization (`initialize_solution`)
-- Creates discretized grid with spacing δ
+**Implementation**: Uses `SolutionState.from_polygon_and_blocks()` factory method
+
+- Creates discretized grid with spacing δ (done in `__init__` for proper execution order)
 - Masks points outside polygon
 - Assigns points to containing blocks
 - Initializes solution arrays and parameters
 - Calculates block parameters (α, β, θ, r₀)
 
 ### 3. Boundary Estimation (`estimate_solution_over_curved_boundaries`)
+**Implementation**: Delegates to `BoundaryEstimator` class in `mathematical/boundary_estimator.py`
+
 - Iteratively estimates solution on block boundaries
 - Uses carrier functions and Poisson kernels
 - Implements equations (4.14) and (4.15) from Volkov's book
 - Iterates until max_iter reached
 
 ### 4. Interior Solution (`estimate_solution_over_inner_points`)
+**Implementation**: Delegates to `InteriorSolver` class in `mathematical/interior_solver.py`
+
 - Calculates solution at all interior grid points
 - Uses equation (5.1) combining:
-  - Q: Carrier function values
-  - R: Poisson kernel values
+  - Q: Carrier function values (from `CarrierFunctions`)
+  - R: Poisson kernel values (from `PoissonKernels`)
   - Boundary estimates from step 3
 
-## Key Mathematical Components
+## Key Mathematical Components (Now Modularized)
 
-### Carrier Functions
+### Carrier Functions (`mathematical/carrier_functions.py`)
+**Class**: `CarrierFunctions` - Extracted pure mathematical calculations
+
 Different formulations based on block type and boundary conditions:
 - Handle mixed Dirichlet/Neumann conditions
 - Account for singularities near boundaries
 - Use logarithmic terms for certain configurations
+- **Key Method**: `calculate(block_kind, block_boundary_identifier, r_, theta_, k, a_, b_, alpha_j)`
 
-### Poisson Kernels
-Fundamental solutions for each block type:
+### Poisson Kernels (`mathematical/poisson_kernels.py`)
+**Class**: `PoissonKernels` - Fundamental solutions for each block type
+
 - **First kind**: Complex formula with scaling factor λⱼ
 - **Second kind**: Standard Poisson kernel with reflection
 - **Third kind**: Simple radial Poisson kernel
+- **Key Method**: `calculate(block_kind, nu_i, nu_j, r_, r0_, theta_, eta_, alpha_j)`
+- **Implements**: Equations (3.12), (3.13), (3.15), (3.16), (3.17) from Volkov's book
 
-### Coordinate Transformations
+### Coordinate Transformations (`utils/coordinate_transforms.py`)
+**Class**: `CoordinateTransforms` - Extracted transformation utilities
+
 - Cartesian ↔ Polar conversions relative to block centers
 - Reference angle tracking for consistent orientation
 - Vectorized operations for efficiency
+- **Methods**: `cartesian_to_polar()`, `polar_to_cartesian()`, batch versions
+
+### Boundary Estimation (`mathematical/boundary_estimator.py`)
+**Class**: `BoundaryEstimator` - Iterative boundary solution algorithm
+
+- **Key Method**: `estimate(state, max_iter=100)`
+- **Implements**: Equations (4.14) and (4.15) from Volkov's book
+- Manages iterative convergence for boundary values
+
+### Interior Solution (`mathematical/interior_solver.py`)
+**Class**: `InteriorSolver` - Interior point calculation algorithm
+
+- **Key Method**: `solve(state, tolerance=1e-10)`
+- **Implements**: Equation (5.1) from Volkov's book
+- Computes final solution at all interior grid points
 
 ## Parameters
 
@@ -108,12 +144,15 @@ Fundamental solutions for each block type:
 - Tolerance checks for near-zero values
 - Verification of solution uniqueness
 
-### Data Structures
+### Data Structures (Now in SolutionState)
+**Centralized in**: `core/solution_state.py` - `SolutionState` class
+
 - `blocks`: List of block objects
 - `solution`: Masked array of solution values
-- `inside_block_ids_`: Grid point to block mapping
+- `inside_block_ids`: Grid point to block mapping
 - `boundary_estimates`: Solution on block boundaries
 - `quantized_boundary_points`: Discretized boundary points
+- **Factory Method**: `SolutionState.from_polygon_and_blocks()` for initialization
 
 ## Solution Process Flow
 
@@ -139,15 +178,27 @@ Fundamental solutions for each block type:
    - Provide visualization methods
    - Support gradient computation
 
-## Key Methods
+## Key Methods (Refactored Architecture)
 
-- `solve()`: Main entry point, orchestrates solution process
-- `find_block_covering()`: Creates block covering
-- `calculate_carrier_function_value()`: Evaluates carrier functions
-- `calculate_poisson_kernel_value()`: Evaluates Poisson kernels
-- `plot_block_covering()`: Visualizes block arrangement
-- `plot_solution()`: Creates solution heatmap
-- `plot_gradient()`: Shows solution gradient field
+### Main Orchestrator (volkov.py)
+- `solve()`: Main entry point, orchestrates solution process (now ~484 lines vs 980)
+- `find_block_covering()`: Delegates to `BlockCovering` class
+- `initialize_solution()`: Uses `SolutionState.from_polygon_and_blocks()`
+- `plot_block_covering()`: Delegates to `volkov_plots.plot_block_covering()`
+- `plot_solution()`: Delegates to `volkov_plots.plot_solution_heatmap()`
+- `plot_gradient()`: Delegates to `volkov_plots.plot_gradient_field()`
+
+### Extracted Mathematical Methods
+- `CarrierFunctions.calculate()`: Pure mathematical carrier function evaluation
+- `PoissonKernels.calculate()`: Pure mathematical Poisson kernel evaluation
+- `BoundaryEstimator.estimate()`: Boundary iteration algorithm
+- `InteriorSolver.solve()`: Interior point solution calculation
+
+### Extracted Algorithmic Methods
+- `BlockCovering._create_first_kind_blocks()`: Vertex block creation
+- `BlockCovering._create_second_kind_blocks()`: Edge block creation
+- `BlockCovering._create_third_kind_blocks()`: Interior block creation
+- `CoordinateTransforms.cartesian_to_polar()`: Coordinate conversions
 
 ## Error Handling
 - Verifies counterclockwise vertex ordering

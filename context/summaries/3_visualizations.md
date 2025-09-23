@@ -3,10 +3,16 @@
 ## Overview
 The visualization module provides comprehensive plotting capabilities for understanding the Volkov method's operation, from block covering to solution visualization and analysis.
 
+**REFACTORING STATUS**: ✅ **COMPLETED** - Visualization functionality has been reorganized into two modules:
+- `visualization/volkov_plots.py` (223 lines): Volkov-specific plotting functions extracted from the main solver
+- `visualization/plotting.py` (268 lines): General analysis and comparison plots
+
 ## Main Visualization Functions
 
+## Volkov-Specific Visualization (`volkov_plots.py`)
+
 ### 1. Block Covering Visualization
-**Method**: `volkovSolver.plot_block_covering()`
+**Method**: `volkovSolver.plot_block_covering()` → Delegates to `plot_block_covering()`
 
 Displays the block grid structure overlaid on the polygon:
 - **First Kind Blocks (Blue)**
@@ -31,7 +37,7 @@ Displays the block grid structure overlaid on the polygon:
 - Uncovered points highlighting (red dots)
 
 ### 2. Solution Heatmap
-**Method**: `volkovSolver.plot_solution()`
+**Method**: `volkovSolver.plot_solution()` → Delegates to `plot_solution_heatmap()`
 
 Visualizes the computed solution as a color-coded heatmap:
 - Uses `pcolormesh` for efficient rendering
@@ -41,7 +47,7 @@ Visualizes the computed solution as a color-coded heatmap:
 - Optional vmin/vmax for consistent scaling across plots
 
 ### 3. Gradient Field Visualization
-**Method**: `volkovSolver.plot_gradient()`
+**Method**: `volkovSolver.plot_gradient()` → Delegates to `plot_gradient_field()`
 
 Shows the solution gradient as a vector field:
 - Computes gradients using `np.gradient`
@@ -51,10 +57,10 @@ Shows the solution gradient as a vector field:
   - `decimation_factor`: Reduces vector density (default 2)
   - `scale`: Controls arrow size (default 20)
 
-## Specialized Plotting Functions
+## General Analysis Visualization (`plotting.py`)
 
 ### 4. Three-Polygon Comparison
-**Function**: `plot_three_polygons_block_covering()`
+**Function**: `plot_three_polygons_block_covering()` (in `plotting.py`)
 
 Creates publication-ready figures of three standard geometries:
 - Rectangle (3:1 aspect ratio)
@@ -68,7 +74,7 @@ Features:
 - Demonstrates block covering on different shapes
 
 ### 5. Solution Steps Visualization
-**Function**: `plot_3by3_solution_steps()`
+**Function**: `plot_3by3_solution_steps()` (in `plotting.py`)
 
 Creates comprehensive 3x3 grid showing complete solution process:
 
@@ -89,7 +95,7 @@ Output Options:
 - Save as PDF (block_covering.pdf, solution.pdf, gradient.pdf)
 
 ### 6. Heuristic Analysis Plot
-**Function**: `plot_heuristic_analysis()`
+**Function**: `plot_heuristic_analysis()` (in `plotting.py`)
 
 Analyzes impact of heuristic parameters on solver performance:
 
@@ -140,13 +146,27 @@ Analyzes impact of heuristic parameters on solver performance:
 - Vectorized plotting operations
 - Batch figure generation for comparisons
 
-## Integration with Solver
+## Integration with Solver (Refactored)
 
-The visualization module is tightly integrated with the solver:
-- Direct access to solver internals
-- Real-time plotting during solution
-- Diagnostic views of intermediate steps
+The visualization modules are now cleanly separated but well-integrated:
+
+### Volkov-Specific Integration (`volkov_plots.py`)
+- Clean delegation pattern from solver methods
+- Direct access to solver state and block data
+- Real-time plotting during solution with proper data access
+- Specialized functions for Volkov method visualization
+
+### Analysis Integration (`plotting.py`)
+- Independent analysis and comparison functions
 - Parameter sensitivity analysis
+- Multi-solver comparison capabilities
+- Publication-ready output generation
+
+### Key Improvements
+- **Separation of Concerns**: Volkov-specific vs general plotting
+- **Testability**: Visualization functions can be tested independently
+- **Reusability**: General plotting functions work with any solver
+- **Maintainability**: Clear boundaries between solver logic and visualization
 
 ## Output Formats
 - Interactive matplotlib figures
