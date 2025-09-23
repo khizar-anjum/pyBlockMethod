@@ -8,7 +8,7 @@ information during the Volkov block grid method computation. These structures
 organize the numerous arrays and parameters needed for the algorithm.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 import numpy as np
 from .polygon import polygon
@@ -23,6 +23,8 @@ class SolutionState:
     This class organizes all the arrays and parameters needed during the
     Volkov method computation, making it easier to pass data between
     different components of the algorithm.
+
+    Now supports polygons with holes by handling multiple boundaries.
     """
 
     # Grid information
@@ -69,6 +71,13 @@ class SolutionState:
     mu_carrier_function_values: np.ma.MaskedArray
     poisson_kernel_values: np.ma.MaskedArray
 
+    # NEW: Support for holes
+    polygon: polygon  # Store the polygon with holes
+    boundary_segments: List  # List of (boundary_type, boundary_id, edge_id) tuples
+    boundary_conditions_flat: List  # Flattened boundary conditions for all boundaries
+    is_dirichlet_flat: List  # Flattened Dirichlet flags for all boundaries
+    block_boundary_info: np.ndarray  # Maps blocks to their boundary segments
+
     @classmethod
     def from_polygon_and_blocks(cls, poly: polygon, blocks: List[block], delta: float,
                                n: int, boundary_conditions: List[List[float]],
@@ -78,18 +87,19 @@ class SolutionState:
 
         This method initializes all the necessary arrays and parameters for the
         Volkov method computation based on the given polygon, blocks, and parameters.
+        Now supports polygons with holes.
 
         Parameters:
-            poly (polygon): The polygon domain
+            poly (polygon): The polygon domain (may contain holes)
             blocks (List[block]): List of blocks covering the domain
             delta (float): Grid spacing
             n (int): Angular discretization parameter
-            boundary_conditions (List[List[float]]): Boundary conditions for each edge
-            is_dirichlet (List[bool]): Boundary condition types for each edge
+            boundary_conditions (List[List[float]]): Boundary conditions for main polygon edges
+            is_dirichlet (List[bool]): Boundary condition types for main polygon edges
             tolerance (float): Numerical tolerance
 
         Returns:
-            SolutionState: Initialized solution state object
+            SolutionState: Initialized solution state object with hole support
         """
         # Calculate grid dimensions and bounds
         x_min, y_min = np.min(poly.vertices, axis=0)
@@ -103,9 +113,32 @@ class SolutionState:
         y = np.linspace(y_min + 0.5 * delta, y_max + 0.5 * delta, ny)
         X, Y = np.meshgrid(x, y)
 
-        # Create points array and mask
+        # Create points array and mask (accounting for holes)
         points = np.stack([X.ravel(), Y.ravel()], axis=1)
-        mask = poly.is_inside(points).reshape(ny, nx)
+
+        # Use _point_in_polygon for each point to properly handle holes
+        mask = np.zeros(len(points), dtype=bool)
+        for i, point in enumerate(points):
+            mask[i] = poly._point_in_polygon(point[0], point[1])
+        mask = mask.reshape(ny, nx)
+
+        # Flatten boundary conditions from main polygon and holes
+        boundary_segments = []
+        boundary_conditions_flat = []
+        is_dirichlet_flat = []
+
+        # Main polygon boundaries
+        for edge_id in range(len(poly.vertices)):
+            boundary_segments.append(('main', 0, edge_id))
+            boundary_conditions_flat.append(boundary_conditions[edge_id])
+            is_dirichlet_flat.append(is_dirichlet[edge_id])
+
+        # Hole boundaries
+        for hole_id, hole in enumerate(poly.holes):
+            for edge_id in range(hole.n_vertices):
+                boundary_segments.append(('hole', hole_id, edge_id))
+                boundary_conditions_flat.append(hole.boundary_conditions[edge_id])
+                is_dirichlet_flat.append(hole.is_dirichlet[edge_id])
 
         # Initialize solution arrays
         solution = np.ma.masked_array(np.zeros((ny, nx)), mask=~mask)
@@ -207,6 +240,9 @@ class SolutionState:
         mu_carrier_function_values = np.ma.zeros_like(theta_mu)
         poisson_kernel_values = np.ma.zeros_like(theta_mu)
 
+        # Initialize block boundary info (will be updated when blocks handle holes)
+        block_boundary_info = np.zeros((num_blocks, 3), dtype=int)  # boundary_type, boundary_id, edge_id
+
         return cls(
             nx=nx, ny=ny, delta=delta, x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max,
             X=X, Y=Y, solution=solution, inside_block_ids=inside_block_ids,
@@ -219,5 +255,9 @@ class SolutionState:
             tau_ref_thetas=tau_ref_thetas, tau_block_polar_coordinates=tau_block_polar_coordinates,
             tau_carrier_function_values=tau_carrier_function_values,
             mu_carrier_function_values=mu_carrier_function_values,
-            poisson_kernel_values=poisson_kernel_values
+            poisson_kernel_values=poisson_kernel_values,
+            polygon=poly, boundary_segments=boundary_segments,
+            boundary_conditions_flat=boundary_conditions_flat,
+            is_dirichlet_flat=is_dirichlet_flat,
+            block_boundary_info=block_boundary_info
         )
