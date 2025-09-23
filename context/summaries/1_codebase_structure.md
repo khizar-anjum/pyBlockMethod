@@ -90,13 +90,17 @@ Main package directory containing the implementation:
   - Gradient field visualization
 
 ### tests/
-- **test_solver.py**: Unit tests using pytest
-  - Tests polygon functionality
-  - Tests solver basic operations
-  - Tests block covering algorithm
-  - Tests plotting functionality
+- **test_solver.py**: Functional tests using pytest (3 tests)
+  - Tests polygon geometric calculations (area, convexity, vertex validation)
+  - Tests block covering mathematical relationships (N, L, M counts)
+  - Clean, focused tests for core component functionality
+- **test_accuracy.py**: Machine-precision accuracy tests (76 tests)
+  - MSE-based validation against 72 reference solutions
+  - Tests all stable parameter combinations (radial_heuristic ≥ 0.85)
+  - Infrastructure tests for reference data integrity
+- **generate_reference_data.py**: Utility script for generating golden baseline solutions
+- **reference_data/**: 72 compressed .npz files (732KB) containing reference solutions
 - **conftest.py**: Pytest configuration
-- **run_examples.py**: Example runner script
 
 ### examples/
 - **simple_square.py**: Basic square domain example with temperature distribution
