@@ -24,9 +24,12 @@ def plot_block_covering(
     """
     Visualize the block covering of the domain with holes support.
 
-    Shows blocks with different colors based on boundary type:
-    - Main boundary: First kind (blue), Second kind (red), Third kind (green)
-    - Hole boundaries: First kind (cyan), Second kind (magenta)
+    Shows blocks with colors based on block type:
+    - First kind blocks (vertex sectors): Blue
+    - Second kind blocks (edge half-disks): Red
+    - Third kind blocks (interior disks): Green
+
+    Blocks from both main and hole boundaries use the same color scheme.
 
     Parameters:
         solver: Volkov solver instance with computed blocks

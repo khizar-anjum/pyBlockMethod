@@ -157,8 +157,8 @@ class SolutionState:
         ref_theta = np.zeros(num_blocks)
         block_type = np.zeros(num_blocks, dtype=int)
 
-        # Initialize boundary condition arrays
-        num_bounds = [len(x) for x in boundary_conditions]
+        # Initialize boundary condition arrays (use flattened conditions that include holes)
+        num_bounds = [len(x) for x in boundary_conditions_flat]
         max_bounds = max(num_bounds) if num_bounds else 1
         phi_ij = np.ma.masked_array(np.zeros((num_blocks, max_bounds, 2)), mask=True)
         block_nu = np.ma.masked_array(np.zeros((num_blocks, 2), dtype=bool), mask=True)
@@ -172,30 +172,83 @@ class SolutionState:
             block_type[blk.id_] = blk.block_kind
 
             if blk.block_kind == 1:
-                # First kind block
-                ref_theta[blk.id_] = np.arctan2(
-                    poly.edges[blk.edge_j_index][1],
-                    poly.edges[blk.edge_j_index][0]
-                )
-                phi_ij[blk.id_, :num_bounds[blk.edge_i_index], 0] = boundary_conditions[blk.edge_i_index]
-                phi_ij.mask[blk.id_, num_bounds[blk.edge_i_index]:, 0] = True
-                phi_ij[blk.id_, :num_bounds[blk.edge_j_index], 1] = boundary_conditions[blk.edge_j_index]
-                phi_ij.mask[blk.id_, num_bounds[blk.edge_j_index]:, 1] = True
-                block_nu[blk.id_, 0] = is_dirichlet[blk.edge_i_index]
-                block_nu[blk.id_, 1] = is_dirichlet[blk.edge_j_index]
-                block_nu.mask[blk.id_, :] = False
+                # First kind block - handle both main polygon and hole vertices
+                if blk.boundary_type == 'main':
+                    # Main polygon first kind block
+                    edge_j_vector = poly.edges[blk.edge_j_index]
+                    ref_theta[blk.id_] = np.arctan2(edge_j_vector[1], edge_j_vector[0])
+
+                    # Map to flattened boundary conditions
+                    edge_i_flat_idx = blk.edge_i_index
+                    edge_j_flat_idx = blk.edge_j_index
+
+                    phi_ij[blk.id_, :len(boundary_conditions_flat[edge_i_flat_idx]), 0] = boundary_conditions_flat[edge_i_flat_idx]
+                    phi_ij.mask[blk.id_, len(boundary_conditions_flat[edge_i_flat_idx]):, 0] = True
+                    phi_ij[blk.id_, :len(boundary_conditions_flat[edge_j_flat_idx]), 1] = boundary_conditions_flat[edge_j_flat_idx]
+                    phi_ij.mask[blk.id_, len(boundary_conditions_flat[edge_j_flat_idx]):, 1] = True
+                    block_nu[blk.id_, 0] = is_dirichlet_flat[edge_i_flat_idx]
+                    block_nu[blk.id_, 1] = is_dirichlet_flat[edge_j_flat_idx]
+                    block_nu.mask[blk.id_, :] = False
+                else:
+                    # Hole first kind block
+                    hole = poly.holes[blk.boundary_id]
+                    edge_j_vector = hole.edges[blk.edge_j_index]
+                    ref_theta[blk.id_] = np.arctan2(edge_j_vector[1], edge_j_vector[0])
+
+                    # Map to flattened boundary conditions (hole boundaries come after main polygon)
+                    main_edges_count = len(poly.vertices)
+                    hole_edge_offset = main_edges_count
+                    for h_idx in range(blk.boundary_id):
+                        hole_edge_offset += poly.holes[h_idx].n_vertices
+
+                    edge_i_flat_idx = hole_edge_offset + blk.edge_i_index
+                    edge_j_flat_idx = hole_edge_offset + blk.edge_j_index
+
+                    phi_ij[blk.id_, :len(boundary_conditions_flat[edge_i_flat_idx]), 0] = boundary_conditions_flat[edge_i_flat_idx]
+                    phi_ij.mask[blk.id_, len(boundary_conditions_flat[edge_i_flat_idx]):, 0] = True
+                    phi_ij[blk.id_, :len(boundary_conditions_flat[edge_j_flat_idx]), 1] = boundary_conditions_flat[edge_j_flat_idx]
+                    phi_ij.mask[blk.id_, len(boundary_conditions_flat[edge_j_flat_idx]):, 1] = True
+                    block_nu[blk.id_, 0] = is_dirichlet_flat[edge_i_flat_idx]
+                    block_nu[blk.id_, 1] = is_dirichlet_flat[edge_j_flat_idx]
+                    block_nu.mask[blk.id_, :] = False
+
             elif blk.block_kind == 2:
-                # Second kind block
-                ref_theta[blk.id_] = np.arctan2(
-                    poly.edges[blk.edge_i_index][1],
-                    poly.edges[blk.edge_i_index][0]
-                )
-                phi_ij[blk.id_, :num_bounds[blk.edge_i_index], 0] = boundary_conditions[blk.edge_i_index]
-                phi_ij.mask[blk.id_, num_bounds[blk.edge_i_index]:, 0] = True
-                phi_ij.mask[blk.id_, :, 1] = True
-                block_nu[blk.id_, 0] = is_dirichlet[blk.edge_i_index]
-                block_nu.mask[blk.id_, 0] = False
-                block_nu.mask[blk.id_, 1] = True
+                # Second kind block - handle both main polygon and hole edges
+                if blk.boundary_type == 'main':
+                    # Main polygon second kind block
+                    edge_i_vector = poly.edges[blk.edge_i_index]
+                    ref_theta[blk.id_] = np.arctan2(edge_i_vector[1], edge_i_vector[0])
+
+                    # Map to flattened boundary conditions
+                    edge_i_flat_idx = blk.edge_i_index
+
+                    phi_ij[blk.id_, :len(boundary_conditions_flat[edge_i_flat_idx]), 0] = boundary_conditions_flat[edge_i_flat_idx]
+                    phi_ij.mask[blk.id_, len(boundary_conditions_flat[edge_i_flat_idx]):, 0] = True
+                    phi_ij.mask[blk.id_, :, 1] = True
+                    block_nu[blk.id_, 0] = is_dirichlet_flat[edge_i_flat_idx]
+                    block_nu.mask[blk.id_, 0] = False
+                    block_nu.mask[blk.id_, 1] = True
+                else:
+                    # Hole second kind block
+                    hole = poly.holes[blk.boundary_id]
+                    edge_i_vector = hole.edges[blk.edge_i_index]
+                    ref_theta[blk.id_] = np.arctan2(edge_i_vector[1], edge_i_vector[0])
+
+                    # Map to flattened boundary conditions (hole boundaries come after main polygon)
+                    main_edges_count = len(poly.vertices)
+                    hole_edge_offset = main_edges_count
+                    for h_idx in range(blk.boundary_id):
+                        hole_edge_offset += poly.holes[h_idx].n_vertices
+
+                    edge_i_flat_idx = hole_edge_offset + blk.edge_i_index
+
+                    phi_ij[blk.id_, :len(boundary_conditions_flat[edge_i_flat_idx]), 0] = boundary_conditions_flat[edge_i_flat_idx]
+                    phi_ij.mask[blk.id_, len(boundary_conditions_flat[edge_i_flat_idx]):, 0] = True
+                    phi_ij.mask[blk.id_, :, 1] = True
+                    block_nu[blk.id_, 0] = is_dirichlet_flat[edge_i_flat_idx]
+                    block_nu.mask[blk.id_, 0] = False
+                    block_nu.mask[blk.id_, 1] = True
+
             else:
                 # Third kind block - no boundary conditions
                 block_nu.mask[blk.id_, :] = True
