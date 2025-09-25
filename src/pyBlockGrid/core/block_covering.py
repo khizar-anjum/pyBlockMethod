@@ -154,7 +154,11 @@ class BlockCoveringStrategy:
             r0 = self.radial_heuristic * min(
                 min(
                     self._distances_from_edges_filtered(
-                        non_adjacent_starts, non_adjacent_ends, vertex, avg_normal
+                        non_adjacent_starts,
+                        non_adjacent_ends,
+                        vertex,
+                        avg_normal,
+                        angle,
                     )
                 ),
                 np.linalg.norm(adjacent_starts - vertex),
@@ -322,7 +326,7 @@ class BlockCoveringStrategy:
         # Calculate maximum allowed radius at midpoint
         max_allowed_radius = self.radial_heuristic * min(
             self._distances_from_edges_filtered(
-                edge_starts_filtered, edge_ends_filtered, midpoint, edge_normal
+                edge_starts_filtered, edge_ends_filtered, midpoint, edge_normal, np.pi
             )
         )
         actual_radius = self.radial_heuristic * max_allowed_radius
@@ -650,7 +654,12 @@ class BlockCoveringStrategy:
         return distances
 
     def _distances_from_edges_filtered(
-        self, v: np.ndarray, w: np.ndarray, p: np.ndarray, inward_normal: np.ndarray
+        self,
+        v: np.ndarray,
+        w: np.ndarray,
+        p: np.ndarray,
+        inward_normal: np.ndarray,
+        field_of_view_angle: float = np.pi,
     ) -> np.ndarray:
         """
         Calculate distances only to edges that could constrain a block.
@@ -660,14 +669,24 @@ class BlockCoveringStrategy:
             w (np.ndarray): End points of edges
             p (np.ndarray): Point to check
             inward_normal (np.ndarray): Inward normal vector for filtering
+            field_of_view_angle (float): Full field-of-view angle in radians (default: π for 180°)
 
         Returns:
             np.ndarray: Filtered distances
         """
+        # relaxing the field of view angle by around 1 degree on each side!
+        cos_half_fov = np.cos((field_of_view_angle + 4e-2) / 2.0)
+
         # Filter edges based on geometric constraints
         v_dots = np.dot(v - p, inward_normal)
         w_dots = np.dot(w - p, inward_normal)
-        keep_mask = (v_dots > -1e-10) | (w_dots > -1e-10)
+
+        v_norms = np.linalg.norm(v - p, axis=1)
+        w_norms = np.linalg.norm(w - p, axis=1)
+
+        keep_mask = (v_dots / v_norms >= cos_half_fov) | (
+            w_dots / w_norms >= cos_half_fov
+        )
 
         if np.any(keep_mask):
             return self._distances_from_edges(v[keep_mask], w[keep_mask], p)

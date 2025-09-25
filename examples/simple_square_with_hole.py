@@ -38,23 +38,36 @@ def main():
     print(f"  Vertices: {len(main_vertices)}")
 
     # Add square hole: (c-shaped with width wi) (clockwise vertices)
-    wi = 0.1
+    # wi = 0.1
+    # hole_vertices = np.array(
+    #     [
+    #         [-0.4, -0.4],  # Bottom-left
+    #         [-0.4, -0.4 + wi],  # Inside Bottom-left
+    #         [0.4 - wi, -0.4 + wi],  # Inside Bottom-right
+    #         [0.4 - wi, 0.4 - wi],  # Inside Top-right
+    #         [-0.4, 0.4 - wi],  # Inside Top-left
+    #         [-0.4, 0.4],  # Top-left
+    #         [0.4, 0.4],  # Top-right
+    #         [0.4, -0.4],  # Bottom-right
+    #     ]
+    # )  # the array is already clockwise
+    #
+    # # Boundary conditions for hole (cold on all sides)
+    # hole_bc = [[0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0]]
+    # hole_is_dirichlet = [True, True, True, True, True, True, True, True]
+
     hole_vertices = np.array(
         [
             [-0.4, -0.4],  # Bottom-left
-            [-0.4, -0.4 + wi],  # Inside Bottom-left
-            [0.4 - wi, -0.4 + wi],  # Inside Bottom-right
-            [0.4 - wi, 0.4 - wi],  # Inside Top-right
-            [-0.4, 0.4 - wi],  # Inside Top-left
-            [-0.4, 0.4],  # Top-left
+            [0.4, -0.4],  # Inside Bottom-left
             [0.4, 0.4],  # Top-right
-            [0.4, -0.4],  # Bottom-right
+            [-0.4, 0.4],  # Bottom-right
         ]
     )  # the array is already clockwise
 
     # Boundary conditions for hole (cold on all sides)
-    hole_bc = [[0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0]]
-    hole_is_dirichlet = [True, True, True, True, True, True, True, True]
+    hole_bc = [[0.0], [0.0], [0.0], [0.0]]
+    hole_is_dirichlet = [True, True, True, True]
 
     # Add hole to polygon
     hole = poly.add_hole(hole_vertices, hole_bc, hole_is_dirichlet)
