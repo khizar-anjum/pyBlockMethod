@@ -37,19 +37,24 @@ def main():
     print(f"  Area: {poly.area():.4f}")
     print(f"  Vertices: {len(main_vertices)}")
 
-    # Add square hole: 0.8x0.8 centered at origin (clockwise vertices)
+    # Add square hole: (c-shaped with width wi) (clockwise vertices)
+    wi = 0.1
     hole_vertices = np.array(
         [
             [-0.4, -0.4],  # Bottom-left
+            [-0.4, -0.4 + wi],  # Inside Bottom-left
+            [0.4 - wi, -0.4 + wi],  # Inside Bottom-right
+            [0.4 - wi, 0.4 - wi],  # Inside Top-right
+            [-0.4, 0.4 - wi],  # Inside Top-left
             [-0.4, 0.4],  # Top-left
             [0.4, 0.4],  # Top-right
             [0.4, -0.4],  # Bottom-right
         ]
-    )[::-1]  # Reverse to make clockwise
+    )  # the array is already clockwise
 
     # Boundary conditions for hole (cold on all sides)
-    hole_bc = [[0.0], [0.0], [0.0], [0.0]]
-    hole_is_dirichlet = [True, True, True, True]
+    hole_bc = [[0.0], [0.0], [1.0], [0.0], [0.0], [0.0], [0.0], [0.0]]
+    hole_is_dirichlet = [True, True, True, True, True, True, True, True]
 
     # Add hole to polygon
     hole = poly.add_hole(hole_vertices, hole_bc, hole_is_dirichlet)
@@ -59,7 +64,7 @@ def main():
 
     # Set boundary conditions for main polygon:
     # Temperature = 1 on bottom edge, 0 elsewhere (Dirichlet conditions)
-    boundary_conditions = [[1.0], [0.0], [0.0], [0.0]]
+    boundary_conditions = [[0.0], [0.0], [0.0], [0.0]]
     is_dirichlet = [True] * 4  # Dirichlet conditions on all edges
 
     print("\nBoundary conditions:")
@@ -74,7 +79,7 @@ def main():
         poly=poly,
         boundary_conditions=boundary_conditions,
         is_dirichlet=is_dirichlet,
-        delta=0.01,  # Grid spacing
+        delta=0.05,  # Grid spacing
         n=50,  # Number of angular divisions
         max_iter=10,  # Maximum iterations
     )

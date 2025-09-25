@@ -20,6 +20,9 @@ wheels/
 .installed.cfg
 *.egg
 
+# Zed debugging
+.zed/
+
 # Virtual Environment
 venv/
 env/
