@@ -5,6 +5,8 @@ The test suite provides comprehensive validation of the Volkov method implementa
 
 **IMPLEMENTATION STATUS**: ✅ **COMPLETE** - Replaced smoke tests with rigorous accuracy-based testing using golden baseline reference data with machine precision validation.
 
+**HOLE SUPPORT STATUS**: 🔄 **PENDING** - Hole functionality is implemented and working but formal tests for multiply-connected domains are not yet added to the test suite.
+
 ## Test Architecture
 
 ### Test Framework
@@ -171,12 +173,17 @@ python tests/generate_reference_data.py
 ## Future Enhancements
 
 ### Potential Additions
-1. **Performance benchmarks** - Execution time regression detection
-2. **Memory profiling** - Resource usage validation
-3. **Convergence analysis** - Iteration behavior testing
-4. **Analytical comparisons** - Known solution validation
-5. **Extended geometries** - Additional domain shapes
-6. **Mixed boundary conditions** - Dirichlet/Neumann combinations
+1. **Hole Support Tests** - Tests for multiply-connected domains
+   - Square with square hole validation
+   - Multiple holes configuration
+   - Hole boundary condition verification
+   - Block covering correctness for domains with holes
+2. **Performance benchmarks** - Execution time regression detection
+3. **Memory profiling** - Resource usage validation
+4. **Convergence analysis** - Iteration behavior testing
+5. **Analytical comparisons** - Known solution validation
+6. **Extended geometries** - Additional domain shapes
+7. **Mixed boundary conditions** - Dirichlet/Neumann combinations
 
 ### Test Infrastructure
 - **Code coverage reporting** - Identify untested code paths

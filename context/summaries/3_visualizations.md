@@ -4,8 +4,10 @@
 The visualization module provides comprehensive plotting capabilities for understanding the Volkov method's operation, from block covering to solution visualization and analysis.
 
 **REFACTORING STATUS**: ✅ **COMPLETED** - Visualization functionality has been reorganized into two modules:
-- `visualization/volkov_plots.py` (223 lines): Volkov-specific plotting functions extracted from the main solver
+- `visualization/volkov_plots.py` (349 lines): Volkov-specific plotting functions extracted from the main solver
 - `visualization/plotting.py` (268 lines): General analysis and comparison plots
+
+**HOLE SUPPORT STATUS**: ✅ **IMPLEMENTED** - All visualization functions now properly display polygons with holes, including hole boundaries, blocks on holes, and hole boundary conditions.
 
 ## Main Visualization Functions
 
@@ -16,25 +18,31 @@ The visualization module provides comprehensive plotting capabilities for unders
 
 Displays the block grid structure overlaid on the polygon:
 - **First Kind Blocks (Blue)**
-  - Circular sectors at vertices
+  - Circular sectors at vertices (both main polygon and holes)
   - Solid line for inner radius (r)
   - Dashed line for outer radius (r₀)
   - Center points labeled as P₁, P₂, etc.
+  - **NEW**: Properly handles hole vertex blocks
 
 - **Second Kind Blocks (Red)**
-  - Half-disks along edges
+  - Half-disks along edges (both main polygon and holes)
   - Solid and dashed radii as above
   - Sequential numbering after vertices
+  - **NEW**: Correctly oriented for hole edges
 
 - **Third Kind Blocks (Green)**
   - Full circles in interior
   - Cover remaining uncovered points
   - Numbered continuing from second kind
+  - **NEW**: Validated to not overlap with holes
 
 **Optional Features**:
 - Boundary condition labels on edges (φⱼ values)
+- **NEW**: Hole boundary condition labels (φ_H values)
 - Quantized boundary points with solution values
 - Uncovered points highlighting (red dots)
+- **NEW**: `show_holes` parameter to toggle hole display
+- **NEW**: `show_hole_bc` parameter for hole boundary conditions
 
 ### 2. Solution Heatmap
 **Method**: `volkovSolver.plot_solution()` → Delegates to `plot_solution_heatmap()`
@@ -124,6 +132,17 @@ Analyzes impact of heuristic parameters on solver performance:
 - Basic circle rendering for blocks
 - Used for debugging block placement
 - Shows block centers and radii
+
+### Hole-Specific Functions
+**Function**: `_plot_hole_boundary_conditions()`
+- Displays boundary conditions on hole edges
+- Uses smaller font size for clarity
+- Labels formatted as φ_H{hole_id},{edge_id}
+
+**Function**: `polygon.plot()`
+- Enhanced to display holes with dashed lines
+- `show_holes` parameter controls hole visibility
+- Differentiates main boundary (solid) from holes (dashed)
 
 ## Visualization Best Practices
 

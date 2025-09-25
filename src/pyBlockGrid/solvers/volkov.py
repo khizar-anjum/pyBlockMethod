@@ -127,7 +127,7 @@ class volkovSolver(PDESolver):
         # Create points array without using column_stack
         points = np.stack([self._X.ravel(), self._Y.ravel()], axis=1)
 
-        # Create mask using vectorized operations
+        # Create mask using vectorized operations (now handles holes)
         mask = self.poly.is_inside(points).reshape(self.ny, self.nx)
 
         # Create masked array directly
@@ -425,6 +425,7 @@ class volkovSolver(PDESolver):
     def create_third_kind_blocks(self, uncovered_points):
         """
         Create blocks of third kind (interior disks) from original implementation.
+        Now supports polygons with holes.
         """
         # Skip if no uncovered points
         if uncovered_points.mask.all():
@@ -433,9 +434,8 @@ class volkovSolver(PDESolver):
         # Find connected components/contours by clustering points that are within delta distance
         visited = uncovered_points.mask
 
-        # Create arrays for start and end points of edges
-        edge_starts = self.poly.vertices
-        edge_ends = np.roll(self.poly.vertices, -1, axis=0)
+        # Get all constraining edges (main polygon + holes)
+        edge_starts, edge_ends = self.block_covering._get_all_constraining_edges(self.poly)
 
         # Get coordinates of unmasked points
         y_coords, x_coords = np.where(~uncovered_points.mask)
@@ -451,13 +451,36 @@ class volkovSolver(PDESolver):
             current_center = points[i] + 0.5 * self.delta
             visited[y_coords[i], x_coords[i]] = True
 
-            # Calculate minimum distance from edges to determine radius
+            # Validate that the center is in valid domain (inside main polygon, outside holes)
+            if not self.poly._point_in_polygon(current_center[0], current_center[1]):
+                continue
+
+            # Calculate minimum distance from ALL edges (main + holes) to determine radius
             radius = np.min(self.block_covering._distances_from_edges(edge_starts, edge_ends, current_center))
 
             # Create third kind block with calculated center and radius
             r0 = self.radial_heuristic * radius
             length = self.radial_heuristic * r0
-            new_block = block(current_center, 2 * np.pi, length, r0, block_kind=3, id_=self.M)
+
+            # Additional validation: ensure the block doesn't extend into holes
+            block_is_valid = True
+            for hole in self.poly.holes:
+                # Check if block intersects with hole
+                for edge_id in range(hole.n_vertices):
+                    edge_distance = hole.distance_to_edge(current_center[0], current_center[1], edge_id)
+                    if edge_distance < length:
+                        # More precise check needed
+                        block_is_valid = self._validate_third_kind_block(current_center, length, hole)
+                        if not block_is_valid:
+                            break
+                if not block_is_valid:
+                    break
+
+            if not block_is_valid:
+                continue
+
+            new_block = block(current_center, 2 * np.pi, length, r0, block_kind=3, id_=self.M,
+                            boundary_type='main', boundary_id=0)
 
             # Find all points connected to this one
             # Check distances to all unvisited points
@@ -472,6 +495,29 @@ class volkovSolver(PDESolver):
 
             self.blocks.append(new_block)
             self.M += 1
+
+    def _validate_third_kind_block(self, center, radius, hole):
+        """
+        Validate that a third kind block doesn't improperly intersect with a hole.
+
+        Parameters:
+            center: Block center coordinates
+            radius: Block radius
+            hole: PolygonHole object to check against
+
+        Returns:
+            bool: True if block placement is valid
+        """
+        # Check if block center is inside the hole
+        if hole.point_in_hole(center[0], center[1]):
+            return False
+
+        # Check minimum distance to hole vertices
+        for vertex in hole.vertices:
+            if np.linalg.norm(center - vertex) < radius * 0.9:  # Small safety margin
+                return False
+
+        return True
 
     # Backward compatibility properties
     @property

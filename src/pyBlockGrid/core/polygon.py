@@ -148,11 +148,12 @@ class polygon:
         # Positive signed area means counterclockwise ordering
         return signed_area > 0
 
-    def is_inside(self, points: np.ndarray):
+    def is_inside(self, points: np.ndarray, ignore_holes=False):
         # assume that points is a numpy array of shape (N, 2)
         # Fully vectorized ray tracing algorithm for point-in-polygon test
         # Convert single point to array if needed
         points = np.atleast_2d(points)
+        single_point = len(points) == 1
 
         # Get edges by pairing consecutive vertices
         edges = np.vstack((self.vertices, self.vertices[0]))
@@ -194,11 +195,49 @@ class polygon:
         valid_intersections = (intersect_x > points[:, 0]) & possible
         intersections = np.sum(valid_intersections, axis=0)  # Shape: (n_points,)
 
-        # Point is inside if number of intersections is odd
+        # Point is inside main polygon if number of intersections is odd
         inside = intersections % 2 == 1
 
+        # Handle holes if present and not ignored
+        if self.holes and not ignore_holes:
+            # For each hole, check which points are inside it
+            for hole in self.holes:
+                # Vectorized hole check
+                hole_edges = np.vstack((hole.vertices, hole.vertices[0]))
+                hole_starts = hole_edges[:-1]
+                hole_ends = hole_edges[1:]
+
+                # Expand dimensions for broadcasting
+                hole_starts = hole_starts[:, np.newaxis, :]
+                hole_ends = hole_ends[:, np.newaxis, :]
+
+                # Vectors for hole edges
+                v1_hole = points - hole_starts
+                v2_hole = hole_ends - hole_starts
+
+                # Check intersections with hole edges
+                above_h = points[:, 1] >= hole_starts[:, :, 1]
+                below_h = points[:, 1] < hole_ends[:, :, 1]
+                above_flip_h = points[:, 1] >= hole_ends[:, :, 1]
+                below_flip_h = points[:, 1] < hole_starts[:, :, 1]
+
+                possible_h = (above_h & below_h) | (above_flip_h & below_flip_h)
+
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    t_h = v1_hole[:, :, 1] / v2_hole[:, :, 1]
+                    intersect_x_h = hole_starts[:, :, 0] + t_h * v2_hole[:, :, 0]
+
+                valid_intersections_h = (intersect_x_h > points[:, 0]) & possible_h
+                intersections_h = np.sum(valid_intersections_h, axis=0)
+
+                # Points are inside hole if intersections are odd
+                inside_hole = intersections_h % 2 == 1
+
+                # Exclude points that are inside this hole
+                inside = inside & ~inside_hole
+
         # Return single bool if input was single point
-        if len(points) == 1:
+        if single_point:
             return inside[0]
         return inside
 

@@ -5,6 +5,8 @@ This project implements the Volkov Method for solving Laplace equations on polyg
 
 **REFACTORING STATUS**: ✅ **COMPLETED** - The monolithic volkov.py (980 lines) has been successfully refactored into a modular architecture with ~484 lines in the main solver and mathematical algorithms separated into dedicated modules.
 
+**HOLE SUPPORT STATUS**: ✅ **IMPLEMENTED** - The solver now fully supports polygonal domains with holes, including proper block generation, boundary condition handling, and visualization for multiply-connected domains.
+
 ## Important: Virtual Environment
 **Always use the virtual environment when running code:**
 ```bash
@@ -25,30 +27,48 @@ python examples/script.py  # Then run scripts
 Main package directory containing the implementation:
 
 #### Core Components (`core/`)
-- **polygon.py** (166 lines): Defines the `polygon` class for representing polygonal domains
+- **polygon.py** (362 lines): Defines the `polygon` class for representing polygonal domains
   - Handles vertex ordering verification (counterclockwise)
   - Calculates interior angles, edges, and inner connections
   - Provides area and perimeter calculations
   - Implements point-in-polygon testing using ray tracing
-  - Includes plotting methods
+  - **NEW**: Supports holes via `add_hole()` method and hole-aware `is_inside()`
+  - **NEW**: `_point_in_polygon()` method for single-point checks with holes
+  - **NEW**: `area_with_holes()` for effective domain area calculation
+  - Includes plotting methods with hole visualization
 
-- **block.py** (43 lines): Defines the `block` class for the block grid method
+- **polygon_hole.py** (263 lines): **NEW** - Defines the `PolygonHole` class for holes
+  - Represents clockwise-oriented holes within polygons
+  - Maintains boundary conditions for each hole edge
+  - Provides hole-specific geometric calculations
+  - Implements point-in-hole testing
+  - Validates hole geometry and placement
+
+- **block.py** (53 lines): Defines the `block` class for the block grid method
   - Three types of blocks:
     1. First kind: Sectors extending from vertices
     2. Second kind: Half-disks extending from edges
     3. Third kind: Full disks inside the polygon
   - Stores block geometry (center, angle, radii r and r0)
-  - Tracks block relationships and overlaps
+  - **NEW**: Tracks boundary association (main polygon vs holes)
+  - **NEW**: Includes `boundary_type`, `boundary_id`, and `vertex_id` for hole support
 
-- **solution_state.py** (222 lines): **NEW** - Comprehensive data structure for solution state management
+- **solution_state.py** (316 lines): **NEW** - Comprehensive data structure for solution state management
   - Organizes all arrays and parameters needed during computation
   - Factory method for initialization from polygon and blocks
   - Handles grid creation, masking, and parameter setup
+  - **UPDATED**: Extended to handle hole boundaries and their conditions
+  - **NEW**: Flattens boundary conditions from main polygon and all holes
+  - **NEW**: Tracks boundary segments with (boundary_type, boundary_id, edge_id)
 
-- **block_covering.py** (499 lines): **NEW** - Extracted block covering strategies
+- **block_covering.py** (957 lines): **NEW** - Extracted block covering strategies
   - Implements algorithms for creating all three block types
   - Handles block placement, overlap detection, and coverage verification
   - Contains the core logic for finding uncovered points and creating third kind blocks
+  - **UPDATED**: All block creation methods now hole-aware
+  - **NEW**: `_get_all_constraining_edges()` for unified edge handling
+  - **NEW**: `_distances_from_all_edges_filtered()` for proper edge exclusion
+  - **NEW**: Hole-aware methods for all three block kinds
 
 #### Mathematical Module (`mathematical/`) - **NEW**
 **Purpose**: Pure mathematical algorithms extracted from the monolithic solver
@@ -66,11 +86,14 @@ Main package directory containing the implementation:
 
 #### Solvers (`solvers/`)
 - **base.py** (17 lines): Abstract base class `PDESolver` defining the solver interface
-- **volkov.py** (484 lines): **REFACTORED** - Clean orchestrator of the Volkov method
-  - **Reduced from 980 to 484 lines** (~50% reduction)
+- **volkov.py** (540 lines): **REFACTORED** - Clean orchestrator of the Volkov method
+  - **Reduced from 980 to 540 lines** (~45% reduction)
   - Now acts as a clean orchestrator delegating to specialized modules
   - Maintains exact same API and functionality
   - Improved readability and maintainability
+  - **UPDATED**: Grid creation now uses hole-aware `is_inside()` method
+  - **NEW**: `create_third_kind_blocks()` handles holes properly
+  - **NEW**: `_validate_third_kind_block()` ensures blocks don't overlap holes
 - **volkov_original.py** (980 lines): Original monolithic implementation preserved for reference
 
 #### Utilities (`utils/`)
@@ -107,6 +130,10 @@ Main package directory containing the implementation:
 - **simple_polygon.py**: General polygon example
 - **complex_polygon.py**: Complex geometry demonstrations
 - **random_polygons.py**: Random polygon generation and solving
+- **simple_square_with_hole.py**: **NEW** - Square domain with square hole demonstration
+  - Shows hole creation and validation
+  - Demonstrates block covering for multiply-connected domains
+  - Visualizes valid domain (inside main, outside hole)
 
 ### context/summaries/
 Documentation directory containing these summary files.
