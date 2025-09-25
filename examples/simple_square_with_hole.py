@@ -16,18 +16,21 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.pyBlockGrid import polygon, volkovSolver
 
+
 def main():
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print(" SQUARE WITH SQUARE HOLE - VOLKOV SOLVER EXAMPLE")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
     # Create main square: 2x2 centered at origin
-    main_vertices = np.array([
-        [-1.0, -1.0],  # Bottom-left
-        [ 1.0, -1.0],  # Bottom-right
-        [ 1.0,  1.0],  # Top-right
-        [-1.0,  1.0]   # Top-left
-    ])
+    main_vertices = np.array(
+        [
+            [-1.0, -1.0],  # Bottom-left
+            [1.0, -1.0],  # Bottom-right
+            [1.0, 1.0],  # Top-right
+            [-1.0, 1.0],  # Top-left
+        ]
+    )
 
     poly = polygon(main_vertices)
     print(f"Main square created:")
@@ -35,12 +38,14 @@ def main():
     print(f"  Vertices: {len(main_vertices)}")
 
     # Add square hole: 0.8x0.8 centered at origin (clockwise vertices)
-    hole_vertices = np.array([
-        [-0.4, -0.4],  # Bottom-left
-        [-0.4,  0.4],  # Top-left
-        [ 0.4,  0.4],  # Top-right
-        [ 0.4, -0.4]   # Bottom-right
-    ])[::-1]  # Reverse to make clockwise
+    hole_vertices = np.array(
+        [
+            [-0.4, -0.4],  # Bottom-left
+            [-0.4, 0.4],  # Top-left
+            [0.4, 0.4],  # Top-right
+            [0.4, -0.4],  # Bottom-right
+        ]
+    )[::-1]  # Reverse to make clockwise
 
     # Boundary conditions for hole (cold on all sides)
     hole_bc = [[0.0], [0.0], [0.0], [0.0]]
@@ -69,15 +74,15 @@ def main():
         poly=poly,
         boundary_conditions=boundary_conditions,
         is_dirichlet=is_dirichlet,
-        delta=0.1,   # Grid spacing
-        n=50,        # Number of angular divisions
-        max_iter=10  # Maximum iterations
+        delta=0.01,  # Grid spacing
+        n=50,  # Number of angular divisions
+        max_iter=10,  # Maximum iterations
     )
 
     # Find block covering
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("Finding block covering...")
-    print("="*50)
+    print("=" * 50)
     solver.find_block_covering()
 
     # Get block statistics
@@ -91,32 +96,79 @@ def main():
     print(f"  Third kind blocks (interior): {M - L}")
 
     # Analyze blocks by boundary
-    main_blocks = [b for b in solver.blocks if getattr(b, 'boundary_type', 'main') == 'main']
-    hole_blocks = [b for b in solver.blocks if getattr(b, 'boundary_type', 'main') == 'hole']
+    main_blocks = [
+        b for b in solver.blocks if getattr(b, "boundary_type", "main") == "main"
+    ]
+    hole_blocks = [
+        b for b in solver.blocks if getattr(b, "boundary_type", "main") == "hole"
+    ]
 
     print(f"\nBlocks by boundary:")
     print(f"  Main boundary blocks: {len(main_blocks)}")
     print(f"  Hole boundary blocks: {len(hole_blocks)}")
 
-    # Create visualization
-    print("\n" + "="*50)
-    print("Creating visualization...")
-    print("="*50)
+    # Solve the problem
+    print("\n" + "=" * 50)
+    print("Solving the Laplace equation...")
+    print("=" * 50)
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    try:
+        solution = solver.solve(verbose=True)
+        print(f"\nSolution computed successfully!")
+        print(f"  Solution shape: {solution.shape}")
+        print(f"  Valid points: {np.sum(~solution.mask)}")
+        print(f"  Solution range: [{solution.min():.4f}, {solution.max():.4f}]")
+
+        # Validate the solution
+        print("\n" + "=" * 50)
+        print("Validating solution...")
+        print("=" * 50)
+
+        # Check hole boundary conditions
+        hole_validation = solver.validate_hole_solution()
+        if "holes" in hole_validation:
+            for hole_result in hole_validation["holes"]:
+                hole_id = hole_result["hole_id"]
+                max_error = hole_result["max_error"]
+                mean_error = hole_result["mean_error"]
+                print(
+                    f"  Hole {hole_id + 1}: max_error={max_error:.6f}, mean_error={mean_error:.6f}"
+                )
+
+        # Check solution continuity
+        continuity = solver.check_solution_continuity()
+        if "continuity_score" in continuity:
+            print(f"  Continuity score: {continuity['continuity_score']:.4f}")
+            print(f"  Max gradient: {continuity['max_gradient']:.4f}")
+            print(f"  Mean gradient: {continuity['mean_gradient']:.4f}")
+
+        solution_computed = True
+
+    except Exception as e:
+        print(f"\nSolution computation failed: {e}")
+        print("Continuing with block covering visualization only...")
+        solution_computed = False
+
+    # Create visualization
+    print("\n" + "=" * 50)
+    print("Creating visualization...")
+    print("=" * 50)
+
+    if solution_computed:
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 12))
+    else:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
     # Plot 1: Block covering with boundary conditions
     solver.plot_block_covering(
-        ax=ax1,
-        show_boundary_conditions=True,
-        show_quantized_boundaries=False
+        ax=ax1, show_boundary_conditions=True, show_quantized_boundaries=False
     )
-    ax1.set_title('Block Covering with Boundary Conditions\n(Hole-aware Volkov Method)')
-    ax1.set_xlabel('x')
-    ax1.set_ylabel('y')
+    ax1.set_title("Block Covering with Boundary Conditions\n(Hole-aware Volkov Method)")
+    ax1.set_xlabel("x")
+    ax1.set_ylabel("y")
 
     # Plot 2: Domain visualization
-    ax2.set_title('Valid Domain\n(Inside main, outside hole)')
+    ax2.set_title("Valid Domain\n(Inside main, outside hole)")
 
     # Create a grid to show the domain
     x = np.linspace(-1.5, 1.5, 100)
@@ -131,29 +183,57 @@ def main():
                 Z[i, j] = 1.0
 
     # Show valid domain
-    ax2.contourf(X, Y, Z, levels=[0, 0.5, 1],
-                 colors=['white', 'lightblue'], alpha=0.7)
-    ax2.contour(X, Y, Z, levels=[0.5], colors='black', linewidths=2)
+    ax2.contourf(X, Y, Z, levels=[0, 0.5, 1], colors=["white", "lightblue"], alpha=0.7)
+    ax2.contour(X, Y, Z, levels=[0.5], colors="black", linewidths=2)
 
     # Overlay the polygon boundaries
     poly.plot(ax=ax2, show_holes=True)
     ax2.set_xlim(-1.5, 1.5)
     ax2.set_ylim(-1.5, 1.5)
-    ax2.set_aspect('equal')
+    ax2.set_aspect("equal")
     ax2.grid(True, alpha=0.3)
-    ax2.set_xlabel('x')
-    ax2.set_ylabel('y')
+    ax2.set_xlabel("x")
+    ax2.set_ylabel("y")
 
     # Add annotations
-    ax2.text(0, 0, 'HOLE\n(excluded)',
-             ha='center', va='center', fontsize=12, color='red')
-    ax2.annotate('Hot boundary\n(T=1.0)',
-                 xy=(0, -1), xytext=(0, -1.3),
-                 arrowprops=dict(arrowstyle='->', color='red', lw=2),
-                 fontsize=10, ha='center', color='red')
+    ax2.text(
+        0, 0, "HOLE\n(excluded)", ha="center", va="center", fontsize=12, color="red"
+    )
+    ax2.annotate(
+        "Hot boundary\n(T=1.0)",
+        xy=(0, -1),
+        xytext=(0, -1.3),
+        arrowprops=dict(arrowstyle="->", color="red", lw=2),
+        fontsize=10,
+        ha="center",
+        color="red",
+    )
 
-    plt.suptitle('Square with Square Hole - Volkov Block Method',
-                 fontsize=14, fontweight='bold')
+    if solution_computed:
+        # Plot 3: Solution heatmap
+        solver.plot_solution(ax3)
+        ax3.set_title("Solution Heatmap\n(Temperature Distribution)")
+        ax3.set_xlabel("x")
+        ax3.set_ylabel("y")
+
+        # Plot 4: Gradient field
+        solver.plot_gradient(ax4, decimation_factor=3, scale=15)
+        ax4.set_title("Solution Gradient Field\n(Heat Flow)")
+        ax4.set_xlabel("x")
+        ax4.set_ylabel("y")
+
+        plt.suptitle(
+            "Square with Square Hole - Complete Volkov Solution",
+            fontsize=14,
+            fontweight="bold",
+        )
+    else:
+        plt.suptitle(
+            "Square with Square Hole - Volkov Block Method",
+            fontsize=14,
+            fontweight="bold",
+        )
+
     plt.tight_layout()
 
     # Save figure
@@ -161,16 +241,27 @@ def main():
     if not os.path.exists(plot_folder):
         os.makedirs(plot_folder)
 
-    filename = os.path.join(plot_folder, 'square_with_hole_blocks.png')
+    if solution_computed:
+        filename = os.path.join(plot_folder, "square_with_hole_solution.png")
+    else:
+        filename = os.path.join(plot_folder, "square_with_hole_blocks.png")
+
     plt.savefig(filename, dpi=150)
     print(f"\nVisualization saved to '{filename}'")
 
     plt.show()
 
-    print("\n" + "="*60)
-    print(" HOLE-AWARE BLOCK COVERING COMPLETE!")
-    print(" (Solution computation not yet implemented)")
-    print("="*60 + "\n")
+    print("\n" + "=" * 60)
+    if solution_computed:
+        print(" HOLE-AWARE VOLKOV SOLUTION COMPLETE!")
+        print(
+            f" Solution validation: {'PASSED' if all(h['max_error'] < 0.1 for h in hole_validation.get('holes', [])) else 'CHECK REQUIRED'}"
+        )
+    else:
+        print(" HOLE-AWARE BLOCK COVERING COMPLETE!")
+        print(" (Solution computation encountered errors)")
+    print("=" * 60 + "\n")
+
 
 if __name__ == "__main__":
     main()

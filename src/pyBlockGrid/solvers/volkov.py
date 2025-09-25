@@ -519,6 +519,114 @@ class volkovSolver(PDESolver):
 
         return True
 
+    def validate_hole_solution(self, solution=None):
+        """
+        Validate that the solution satisfies boundary conditions on holes.
+
+        Parameters:
+            solution (np.ma.MaskedArray): Solution to validate (uses self.solution if None)
+
+        Returns:
+            dict: Validation results with boundary condition errors for each hole
+        """
+        if solution is None:
+            solution = self.solution
+
+        if not self.poly.holes:
+            return {"message": "No holes to validate"}
+
+        validation_results = {"holes": []}
+
+        for hole_id, hole in enumerate(self.poly.holes):
+            hole_errors = []
+
+            # Check boundary conditions on each hole edge
+            for edge_id in range(hole.n_vertices):
+                edge_start = hole.vertices[edge_id]
+                edge_end = hole.vertices[(edge_id + 1) % hole.n_vertices]
+
+                # Sample points along the hole edge
+                n_samples = 10
+                edge_points = []
+                for i in range(n_samples):
+                    t = i / (n_samples - 1)
+                    point = edge_start + t * (edge_end - edge_start)
+                    edge_points.append(point)
+
+                # Get boundary conditions for this edge
+                bc = hole.boundary_conditions[edge_id]
+                is_dirichlet = hole.is_dirichlet[edge_id]
+
+                # Check boundary condition satisfaction
+                for point in edge_points:
+                    # Convert to grid coordinates
+                    grid_x = int((point[0] - self.x_min) / self.delta)
+                    grid_y = int((point[1] - self.y_min) / self.delta)
+
+                    if 0 <= grid_x < self.nx and 0 <= grid_y < self.ny:
+                        if not solution.mask[grid_y, grid_x]:
+                            solution_value = solution[grid_y, grid_x]
+                            expected_value = sum(bc[k] * point[0]**k for k in range(len(bc)))
+
+                            if is_dirichlet:
+                                error = abs(solution_value - expected_value)
+                                hole_errors.append({
+                                    "type": "Dirichlet",
+                                    "edge": edge_id,
+                                    "point": point.tolist(),
+                                    "solution_value": float(solution_value),
+                                    "expected_value": float(expected_value),
+                                    "error": float(error)
+                                })
+
+            validation_results["holes"].append({
+                "hole_id": hole_id,
+                "errors": hole_errors,
+                "max_error": max([e["error"] for e in hole_errors]) if hole_errors else 0.0,
+                "mean_error": sum([e["error"] for e in hole_errors]) / len(hole_errors) if hole_errors else 0.0
+            })
+
+        return validation_results
+
+    def check_solution_continuity(self, solution=None):
+        """
+        Check solution continuity across the domain, especially near hole boundaries.
+
+        Parameters:
+            solution (np.ma.MaskedArray): Solution to check (uses self.solution if None)
+
+        Returns:
+            dict: Continuity analysis results
+        """
+        if solution is None:
+            solution = self.solution
+
+        # Compute gradients
+        dy, dx = np.gradient(solution.filled(0))
+        gradient_magnitude = np.sqrt(dx**2 + dy**2)
+
+        # Find maximum gradient locations (potential discontinuities)
+        valid_mask = ~solution.mask
+        valid_gradients = gradient_magnitude[valid_mask]
+
+        if len(valid_gradients) == 0:
+            return {"message": "No valid solution points"}
+
+        max_gradient = np.max(valid_gradients)
+        mean_gradient = np.mean(valid_gradients)
+
+        # Find points with unusually high gradients
+        high_gradient_threshold = mean_gradient + 3 * np.std(valid_gradients)
+        high_gradient_locations = np.where((gradient_magnitude > high_gradient_threshold) & valid_mask)
+
+        return {
+            "max_gradient": float(max_gradient),
+            "mean_gradient": float(mean_gradient),
+            "std_gradient": float(np.std(valid_gradients)),
+            "high_gradient_points": len(high_gradient_locations[0]),
+            "continuity_score": float(mean_gradient / max_gradient) if max_gradient > 0 else 1.0
+        }
+
     # Backward compatibility properties
     @property
     def X(self):
