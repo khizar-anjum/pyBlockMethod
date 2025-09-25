@@ -53,7 +53,7 @@ def main():
     )  # the array is already clockwise
 
     # Boundary conditions for hole (cold on all sides)
-    hole_bc = [[0.0], [0.0], [1.0], [0.0], [0.0], [0.0], [0.0], [0.0]]
+    hole_bc = [[0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0]]
     hole_is_dirichlet = [True, True, True, True, True, True, True, True]
 
     # Add hole to polygon
@@ -64,7 +64,7 @@ def main():
 
     # Set boundary conditions for main polygon:
     # Temperature = 1 on bottom edge, 0 elsewhere (Dirichlet conditions)
-    boundary_conditions = [[0.0], [0.0], [0.0], [0.0]]
+    boundary_conditions = [[0.0], [1.0], [0.0], [0.0]]
     is_dirichlet = [True] * 4  # Dirichlet conditions on all edges
 
     print("\nBoundary conditions:")
@@ -79,9 +79,11 @@ def main():
         poly=poly,
         boundary_conditions=boundary_conditions,
         is_dirichlet=is_dirichlet,
-        delta=0.05,  # Grid spacing
+        delta=0.01,  # Grid spacing
         n=50,  # Number of angular divisions
         max_iter=10,  # Maximum iterations
+        overlap_heuristic=0.1,  # Overlap factor
+        radial_heuristic=0.9,  # Radial overlap factor
     )
 
     # Find block covering

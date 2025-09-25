@@ -435,7 +435,7 @@ class volkovSolver(PDESolver):
         visited = uncovered_points.mask
 
         # Get all constraining edges (main polygon + holes)
-        edge_starts, edge_ends = self.block_covering._get_all_constraining_edges(self.poly)
+        edge_starts, edge_ends, _ = self.block_covering._get_all_edges_unified(self.poly)
 
         # Get coordinates of unmasked points
         y_coords, x_coords = np.where(~uncovered_points.mask)

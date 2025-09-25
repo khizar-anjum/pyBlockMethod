@@ -152,9 +152,13 @@ class BlockCoveringStrategy:
 
             # Calculate radius constraint using filtered distances
             r0 = self.radial_heuristic * min(
-                self._distances_from_edges_filtered(
-                    non_adjacent_starts, non_adjacent_ends, vertex, avg_normal
-                )
+                min(
+                    self._distances_from_edges_filtered(
+                        non_adjacent_starts, non_adjacent_ends, vertex, avg_normal
+                    )
+                ),
+                np.linalg.norm(adjacent_starts - vertex),
+                np.linalg.norm(adjacent_ends - vertex),
             )
             length = self.radial_heuristic * r0
 
@@ -223,6 +227,8 @@ class BlockCoveringStrategy:
                     curr_block,
                     prev_idx,
                     block_id_counter,
+                    "main",
+                    0,
                 )
                 edge_blocks.extend(gap_blocks)
                 block_id_counter += len(gap_blocks)
@@ -255,6 +261,8 @@ class BlockCoveringStrategy:
                         curr_block,
                         prev_idx,
                         block_id_counter,
+                        "hole",
+                        hole_id,
                     )
                     edge_blocks.extend(gap_blocks)
                     block_id_counter += len(gap_blocks)
@@ -262,6 +270,132 @@ class BlockCoveringStrategy:
             vertex_block_idx += num_hole_vertices
 
         return edge_blocks
+
+    def _fill_gap_recursive(
+        self,
+        start_vertex: np.ndarray,
+        end_vertex: np.ndarray,
+        start_radius: float,
+        end_radius: float,
+        edge_starts_filtered: np.ndarray,
+        edge_ends_filtered: np.ndarray,
+        edge_normal: np.ndarray,
+        edge_index: int,
+        block_id_counter: int,
+        unit_edge_vector: np.ndarray,
+        boundary_type: str,
+        boundary_id: int,
+    ) -> Tuple[List[block], int]:
+        """
+        Recursively fill gap between two points with optimally-sized blocks.
+
+        Parameters:
+            start_vertex: Start point of gap
+            end_vertex: End point of gap
+            start_radius: Radius of block at start
+            end_radius: Radius of block at end
+            edge_starts_filtered: Edge start points (current edge excluded)
+            edge_ends_filtered: Edge end points (current edge excluded)
+            edge_normal: Inward normal for visibility filtering
+            edge_index: Index of current edge (local to boundary)
+            block_id_counter: Current block ID counter
+            unit_edge_vector: Unit vector along edge direction
+            boundary_type: "main" or "hole"
+            boundary_id: 0 for main polygon, hole index for holes
+
+        Returns:
+            Tuple of (blocks_list, next_block_id)
+        """
+        gap_distance = np.linalg.norm(end_vertex - start_vertex)
+
+        # Calculate relaxed distance using actual radii and overlap heuristic
+        d_relaxed = gap_distance + (start_radius + end_radius) * self.overlap_heuristic
+
+        # Base case: gap too small for meaningful block
+        min_threshold = 1e-6  # Minimum meaningful gap size
+        if d_relaxed < min_threshold:
+            return [], block_id_counter
+
+        # Calculate midpoint and try to place a block there
+        midpoint = start_vertex + 0.5 * gap_distance * unit_edge_vector
+
+        # Calculate maximum allowed radius at midpoint
+        max_allowed_radius = self.radial_heuristic * min(
+            self._distances_from_edges_filtered(
+                edge_starts_filtered, edge_ends_filtered, midpoint, edge_normal
+            )
+        )
+        actual_radius = self.radial_heuristic * max_allowed_radius
+
+        # Check if single block can cover the relaxed gap
+        if 2 * actual_radius >= d_relaxed:
+            # Single block covers the gap
+            new_block = block(
+                midpoint,
+                np.pi,
+                actual_radius,
+                max_allowed_radius,
+                block_kind=2,
+                id_=block_id_counter,
+                edge_i_index=edge_index,
+                edge_j_index=None,
+                boundary_type=boundary_type,
+                boundary_id=boundary_id,
+            )
+            return [new_block], block_id_counter + 1
+        else:
+            # Need to split: place midpoint block and recursively solve sub-gaps
+            midpoint_block = block(
+                midpoint,
+                np.pi,
+                actual_radius,
+                max_allowed_radius,
+                block_kind=2,
+                id_=block_id_counter,
+                edge_i_index=edge_index,
+                edge_j_index=None,
+                boundary_type=boundary_type,
+                boundary_id=boundary_id,
+            )
+
+            blocks = [midpoint_block]
+            next_id = block_id_counter + 1
+
+            # Recursively fill left gap (start to midpoint)
+            left_blocks, next_id = self._fill_gap_recursive(
+                start_vertex,
+                midpoint - unit_edge_vector * actual_radius,
+                start_radius,
+                actual_radius,
+                edge_starts_filtered,
+                edge_ends_filtered,
+                edge_normal,
+                edge_index,
+                next_id,
+                unit_edge_vector,
+                boundary_type,
+                boundary_id,
+            )
+            blocks.extend(left_blocks)
+
+            # Recursively fill right gap (midpoint to end)
+            right_blocks, next_id = self._fill_gap_recursive(
+                midpoint + unit_edge_vector * actual_radius,
+                end_vertex,
+                actual_radius,
+                end_radius,
+                edge_starts_filtered,
+                edge_ends_filtered,
+                edge_normal,
+                edge_index,
+                next_id,
+                unit_edge_vector,
+                boundary_type,
+                boundary_id,
+            )
+            blocks.extend(right_blocks)
+
+            return blocks, next_id
 
     def _fill_edge_gap(
         self,
@@ -272,6 +406,8 @@ class BlockCoveringStrategy:
         curr_block: block,
         edge_index: int,
         block_id_counter: int,
+        boundary_type: str,
+        boundary_id: int,
     ) -> List[block]:
         """
         Fill gap between two vertex blocks with second kind blocks.
@@ -282,232 +418,69 @@ class BlockCoveringStrategy:
             curr_vertex (np.ndarray): Current vertex
             prev_block (block): Previous vertex block
             curr_block (block): Current vertex block
-            edge_index (int): Index of the edge
+            edge_index (int): Index of the edge (local to boundary)
             block_id_counter (int): Starting ID for new blocks
+            boundary_type (str): "main" or "hole"
+            boundary_id (int): 0 for main polygon, hole index for holes
 
         Returns:
             List[block]: List of blocks filling the gap
         """
-        gap_blocks = []
+        # Calculate basic gap parameters
         distance = np.linalg.norm(curr_vertex - prev_vertex)
         dist_covered = prev_block.length + curr_block.length
         d = distance - dist_covered
 
+        # If no gap exists, return empty list
+        if d <= 0:
+            return []
+
         unit_edge_vector = (curr_vertex - prev_vertex) / distance
-        r0_half_disk = min(prev_block.r0, curr_block.r0)
-        radius_half_disk = self.radial_heuristic * r0_half_disk
-        o_rad = self.overlap_heuristic * radius_half_disk
 
-        # Determine starting position
+        # Determine start and end positions accounting for existing block coverage
         if prev_block.r0 < curr_block.r0:
-            start_vertex = prev_vertex
+            start_vertex = prev_vertex + prev_block.length * unit_edge_vector
+            end_vertex = curr_vertex - curr_block.length * unit_edge_vector
         else:
-            start_vertex = (
-                prev_vertex + (prev_block.length - curr_block.length) * unit_edge_vector
-            )
+            start_vertex = prev_vertex + prev_block.length * unit_edge_vector
+            end_vertex = curr_vertex - curr_block.length * unit_edge_vector
 
-        # Create edge arrays for constraint checking using unified edges
+        # Create edge arrays for constraint checking (exclude current edge)
         edge_starts, edge_ends, _ = self._get_all_edges_unified(poly)
 
-        # Calculate edge normal for filtering
-        edge_normal = self._get_edge_inward_normal(unit_edge_vector)
+        # Calculate global edge index for filtering
+        if boundary_type == "main":
+            global_edge_index = edge_index
+        else:  # hole
+            # Calculate offset: main polygon edges + previous holes
+            global_edge_index = len(poly.vertices)
+            for h_idx in range(boundary_id):
+                global_edge_index += len(poly.holes[h_idx].vertices)
+            global_edge_index += edge_index
 
-        max_dist = d + 0.5 * radius_half_disk
-
-        # Try single block first
-        tentative_vertex = (
-            start_vertex + (radius_half_disk + 0.5 * d) * unit_edge_vector
-        )
-        # Exclude current edge from distance calculations
-        edge_starts_filtered = np.delete(edge_starts, edge_index, axis=0)
-        edge_ends_filtered = np.delete(edge_ends, edge_index, axis=0)
-        actual_r0 = self.radial_heuristic * min(
-            self._distances_from_edges_filtered(
-                edge_starts_filtered, edge_ends_filtered, tentative_vertex, edge_normal
-            )
-        )
-        actual_radius = self.radial_heuristic * actual_r0
-
-        if d < 2 * actual_radius:
-            # Single block can cover the gap
-            gap_blocks.append(
-                block(
-                    tentative_vertex,
-                    np.pi,
-                    actual_radius,
-                    actual_r0,
-                    block_kind=2,
-                    id_=block_id_counter,
-                    edge_i_index=edge_index,
-                    edge_j_index=None,
-                )
-            )
-        else:
-            # Multiple blocks needed
-            num_second_kind_blocks = int(
-                np.ceil((d + radius_half_disk) / (2 * (radius_half_disk - o_rad)))
-            )
-            nextj = 0
-
-            for j in range(num_second_kind_blocks):
-                if j < nextj:
-                    continue
-
-                next_loc = min(2 * (j + 1) * (radius_half_disk - o_rad), max_dist)
-                new_vertex = start_vertex + next_loc * unit_edge_vector
-                # Exclude current edge from distance calculations
-                edge_starts_filtered = np.delete(edge_starts, edge_index, axis=0)
-                edge_ends_filtered = np.delete(edge_ends, edge_index, axis=0)
-                max_allowed_radius = self.radial_heuristic * min(
-                    self._distances_from_edges_filtered(
-                        edge_starts_filtered,
-                        edge_ends_filtered,
-                        new_vertex,
-                        edge_normal,
-                    )
-                )
-                max_radius_ratio = np.floor(
-                    self.radial_heuristic
-                    * max_allowed_radius
-                    / (2 * (radius_half_disk - o_rad))
-                )
-
-                if max_radius_ratio > 1:
-                    gap_blocks.append(
-                        block(
-                            new_vertex,
-                            np.pi,
-                            max_allowed_radius * self.radial_heuristic,
-                            max_allowed_radius,
-                            block_kind=2,
-                            id_=block_id_counter + len(gap_blocks),
-                            edge_i_index=edge_index,
-                            edge_j_index=None,
-                        )
-                    )
-                    nextj = nextj + max_radius_ratio
-                elif max_allowed_radius > r0_half_disk:
-                    gap_blocks.append(
-                        block(
-                            new_vertex,
-                            np.pi,
-                            radius_half_disk,
-                            r0_half_disk,
-                            block_kind=2,
-                            id_=block_id_counter + len(gap_blocks),
-                            edge_i_index=edge_index,
-                            edge_j_index=None,
-                        )
-                    )
-                    nextj = nextj + 1
-                else:
-                    # Need to break the block into smaller pieces
-                    broken_blocks = self._break_second_kind_block(
-                        new_vertex,
-                        r0_half_disk,
-                        max_allowed_radius,
-                        edge_starts,
-                        edge_ends,
-                        unit_edge_vector,
-                        edge_index,
-                        block_id_counter + len(gap_blocks),
-                    )
-                    gap_blocks.extend(broken_blocks)
-                    nextj = nextj + 1
-
-        return gap_blocks
-
-    def _break_second_kind_block(
-        self,
-        old_vertex: np.ndarray,
-        r0_old_block: float,
-        max_allowed_radius: float,
-        edge_starts: np.ndarray,
-        edge_ends: np.ndarray,
-        unit_edge_vector: np.ndarray,
-        edge_i_index: int,
-        block_id_counter: int,
-    ) -> List[block]:
-        """
-        Break a second kind block into smaller blocks to prevent leaking.
-
-        Parameters:
-            old_vertex (np.ndarray): Center of the block to break
-            r0_old_block (float): Radius of the block to break
-            max_allowed_radius (float): Maximum allowed radius
-            edge_starts (np.ndarray): Start points of constraining edges
-            edge_ends (np.ndarray): End points of constraining edges
-            unit_edge_vector (np.ndarray): Unit vector along the edge
-            edge_i_index (int): Index of the edge
-            block_id_counter (int): Starting ID for new blocks
-
-        Returns:
-            List[block]: List of smaller blocks
-        """
-        ratio = int(2 ** np.floor(np.log2(r0_old_block / max_allowed_radius))) + 1
-        done = False
-        radius_old_block = self.radial_heuristic * r0_old_block
+        edge_starts_filtered = np.delete(edge_starts, global_edge_index, axis=0)
+        edge_ends_filtered = np.delete(edge_ends, global_edge_index, axis=0)
 
         # Calculate edge normal for filtering
         edge_normal = self._get_edge_inward_normal(unit_edge_vector)
 
-        vertices = []
-        while not done:
-            done = True
-            n_min = ratio + 1
-            new_radius = radius_old_block / ratio
-            overlap = 1 / (n_min - 1)  # minimum overlap possible
+        # Use recursive method to fill the gap
+        blocks, _ = self._fill_gap_recursive(
+            start_vertex,
+            end_vertex,
+            prev_block.length,
+            curr_block.length,
+            edge_starts_filtered,
+            edge_ends_filtered,
+            edge_normal,
+            edge_index,
+            block_id_counter,
+            unit_edge_vector,
+            boundary_type,
+            boundary_id,
+        )
 
-            for i in range(n_min):
-                new_vertex = (
-                    old_vertex
-                    + (
-                        -radius_old_block
-                        + new_radius
-                        + 2 * i * (1 - overlap) * new_radius
-                    )
-                    * unit_edge_vector
-                )
-                vertices.append(new_vertex)
-
-                # Exclude current edge from distance calculations
-                edge_starts_filtered = np.delete(edge_starts, edge_i_index, axis=0)
-                edge_ends_filtered = np.delete(edge_ends, edge_i_index, axis=0)
-                if (
-                    min(
-                        self._distances_from_edges_filtered(
-                            edge_starts_filtered,
-                            edge_ends_filtered,
-                            new_vertex,
-                            edge_normal,
-                        )
-                    )
-                    < new_radius
-                ):
-                    done = False
-                    break
-
-            if not done:
-                ratio = ratio * 2
-                vertices = []
-
-        new_blocks = []
-        new_r0 = new_radius / self.radial_heuristic
-        for i in range(n_min):
-            new_blocks.append(
-                block(
-                    vertices[i],
-                    np.pi,
-                    new_radius,
-                    new_r0,
-                    block_kind=2,
-                    id_=block_id_counter + i,
-                    edge_i_index=edge_i_index,
-                    edge_j_index=None,
-                )
-            )
-
-        return new_blocks
+        return blocks
 
     def _create_third_kind_blocks(
         self, poly: polygon, uncovered_points: np.ma.MaskedArray, starting_id: int
