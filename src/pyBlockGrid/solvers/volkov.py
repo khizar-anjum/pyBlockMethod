@@ -33,11 +33,19 @@ class volkovSolver(PDESolver):
     providing a clean, modular architecture.
     """
 
-    def __init__(self, poly: polygon, boundary_conditions: list[list[float]] = None,
-                 is_dirichlet: list[bool] = None, n: int = 10, delta: float = 0.01,
-                 max_iter: int = 100, radial_heuristic: float = 0.8,
-                 overlap_heuristic: float = 0.1, tolerance: float = 1e-10,
-                 verify_solution: bool = False):
+    def __init__(
+        self,
+        poly: polygon,
+        boundary_conditions: list[list[float]] = None,
+        is_dirichlet: list[bool] = None,
+        n: int = 10,
+        delta: float = 0.01,
+        max_iter: int = 100,
+        radial_heuristic: float = 0.8,
+        overlap_heuristic: float = 0.1,
+        tolerance: float = 1e-10,
+        verify_solution: bool = False,
+    ):
         """
         Initialize the volkovSolver class. Solves using block grid method by E. Volkov, as outlined in the
         book "Block Method for Solving the Laplace Equation and for Constructing Conformal Mappings (1994)" ISBN: 0849394066
@@ -72,21 +80,33 @@ class volkovSolver(PDESolver):
         self.poly = poly
         self.max_iter = max_iter
         self.boundary_conditions = boundary_conditions
-        assert len(self.boundary_conditions) == len(self.poly.edges), \
+        assert len(self.boundary_conditions) == len(self.poly.edges), (
             "The number of boundary conditions must be equal to the number of edges of the polygon"
+        )
 
-        self.is_dirichlet = is_dirichlet if is_dirichlet else [True for _ in range(len(self.poly.edges))]
-        assert len(self.is_dirichlet) == len(self.poly.edges), \
+        self.is_dirichlet = (
+            is_dirichlet
+            if is_dirichlet
+            else [True for _ in range(len(self.poly.edges))]
+        )
+        assert len(self.is_dirichlet) == len(self.poly.edges), (
             "The number of Dirichlet boundary conditions must be equal to the number of edges of the polygon"
+        )
 
         self.delta = delta
         self.n = n
         self.radial_heuristic = radial_heuristic
-        assert 0 < self.radial_heuristic < 1, "The radial heuristic must be between 0 and 1"
-        assert self.radial_heuristic > 0.707, "The radial heuristic must be greater than 0.707 (sqrt(2)/2)"
+        assert 0 < self.radial_heuristic < 1, (
+            "The radial heuristic must be between 0 and 1"
+        )
+        assert self.radial_heuristic > 0.707, (
+            "The radial heuristic must be greater than 0.707 (sqrt(2)/2)"
+        )
 
         self.overlap_heuristic = overlap_heuristic
-        assert 0 < self.overlap_heuristic < 0.5, "The overlap heuristic must be between 0 and 0.5"
+        assert 0 < self.overlap_heuristic < 0.5, (
+            "The overlap heuristic must be between 0 and 0.5"
+        )
 
         self.tol = tolerance
         assert self.tol > 0, "The tolerance must be greater than 0"
@@ -94,11 +114,15 @@ class volkovSolver(PDESolver):
         self.verify_solution = verify_solution
 
         # Initialize component classes
-        self.block_covering = BlockCoveringStrategy(self.radial_heuristic, self.overlap_heuristic)
+        self.block_covering = BlockCoveringStrategy(
+            self.radial_heuristic, self.overlap_heuristic
+        )
         self.carrier_calc = CarrierFunctions(self.tol)
         self.poisson_calc = PoissonKernels()
         self.coord_transform = CoordinateTransforms()
-        self.boundary_estimator = BoundaryEstimator(self.carrier_calc, self.poisson_calc)
+        self.boundary_estimator = BoundaryEstimator(
+            self.carrier_calc, self.poisson_calc
+        )
         self.interior_solver = InteriorSolver(self.carrier_calc, self.poisson_calc)
 
         # These will be populated during solve()
@@ -120,8 +144,12 @@ class volkovSolver(PDESolver):
         self.nx = int(np.ceil((self.x_max - self.x_min) / self.delta))
 
         # Create grid points more efficiently using meshgrid
-        x = np.linspace(self.x_min + 0.5 * self.delta, self.x_max + 0.5 * self.delta, self.nx)
-        y = np.linspace(self.y_min + 0.5 * self.delta, self.y_max + 0.5 * self.delta, self.ny)
+        x = np.linspace(
+            self.x_min + 0.5 * self.delta, self.x_max + 0.5 * self.delta, self.nx
+        )
+        y = np.linspace(
+            self.y_min + 0.5 * self.delta, self.y_max + 0.5 * self.delta, self.ny
+        )
         self._X, self._Y = np.meshgrid(x, y)
 
         # Create points array without using column_stack
@@ -132,9 +160,13 @@ class volkovSolver(PDESolver):
 
         # Create masked array directly
         self.solution = np.ma.masked_array(np.zeros((self.ny, self.nx)), mask=~mask)
-        self.inside_block_ids_ = np.ma.masked_array(np.zeros((self.ny, self.nx), dtype=int), mask=~mask)
-        self.cartesian_grid = np.ma.array(np.stack([self._X, self._Y], axis=2),
-                                         mask=np.repeat(~mask[:, :, np.newaxis], 2, axis=2))
+        self.inside_block_ids_ = np.ma.masked_array(
+            np.zeros((self.ny, self.nx), dtype=int), mask=~mask
+        )
+        self.cartesian_grid = np.ma.array(
+            np.stack([self._X, self._Y], axis=2),
+            mask=np.repeat(~mask[:, :, np.newaxis], 2, axis=2),
+        )
 
     def solve(self, verbose=False, plot=False, ax=None):
         """
@@ -199,17 +231,19 @@ class volkovSolver(PDESolver):
         # Create tau block centers array
         self.state.tau_block_centers = np.ma.array(
             self.state.center_mu[self.state.tau_block_ids],
-            mask=np.repeat(self.state.tau_block_ids.mask[:, :, np.newaxis], 2, axis=2)
+            mask=np.repeat(self.state.tau_block_ids.mask[:, :, np.newaxis], 2, axis=2),
         )
 
         # Create tau ref thetas array
         self.state.tau_ref_thetas = np.ma.array(
             self.state.ref_theta[self.state.tau_block_ids],
-            mask=self.state.tau_block_ids.mask
+            mask=self.state.tau_block_ids.mask,
         )
 
         # Find tau block polar coordinates
-        self.state.tau_block_polar_coordinates = self._find_tau_block_polar_coordinates()
+        self.state.tau_block_polar_coordinates = (
+            self._find_tau_block_polar_coordinates()
+        )
 
         # Calculate Poisson kernel values
         self.state.poisson_kernel_values = self._find_poisson_kernel_values()
@@ -217,32 +251,72 @@ class volkovSolver(PDESolver):
         # Verify solution uniqueness if requested
         if self.verify_solution:
             assert self.boundary_estimator.verify_unique_solution(
-                self.state.poisson_kernel_values, self.state.beta_mu,
-                self.state.tau_block_ids, self.state.theta_mu, self.M
-            ), f"No unique solution exists for the natural number parameter n = {self.n}"
+                self.state.poisson_kernel_values,
+                self.state.beta_mu,
+                self.state.tau_block_ids,
+                self.state.theta_mu,
+                self.M,
+            ), (
+                f"No unique solution exists for the natural number parameter n = {self.n}"
+            )
 
         # Calculate carrier function values
         self._find_carrier_function_values_on_blocks()
 
     def _find_tau_block_ids_for_P_mu(self):
         """Find block IDs that contain P_mu points lying on extended block boundaries."""
-        points = np.repeat(self.state.quantized_boundary_points[np.newaxis, :], len(self.blocks), axis=0) - \
-            self.state.center_mu[:, np.newaxis, np.newaxis]
-        dists = np.linalg.norm(points, axis=3) <= self.state.r_mu[:, np.newaxis, np.newaxis]
+        points = (
+            np.repeat(
+                self.state.quantized_boundary_points[np.newaxis, :],
+                len(self.blocks),
+                axis=0,
+            )
+            - self.state.center_mu[:, np.newaxis, np.newaxis]
+        )
+        dists = (
+            np.linalg.norm(points, axis=3) <= self.state.r_mu[:, np.newaxis, np.newaxis]
+        )
+
+        # we need to discard the distances that are not in the sector (angle wise)
+        # get angles of points relative to block centers
+        point_angles = np.arctan2(points[:, :, :, 1], points[:, :, :, 0])
+
+        # normalize angles relative to each block's reference angle
+        relative_angles = point_angles - self.state.ref_theta[:, np.newaxis, np.newaxis]
+
+        # normalize to [0, 2pi)
+        relative_angles = np.mod(relative_angles, 2 * np.pi)
+
+        # check if within the block's angular extent
+        angular_valid = (
+            relative_angles <= np.pi * self.state.alpha_mu[:, np.newaxis, np.newaxis]
+        )
+
+        # combine radial and angular constraints
+        valid = dists & angular_valid
 
         # Find the smallest index that is true in the first axis
-        tau_block_ids = np.ma.array(np.argmax(dists, axis=0), mask=~np.any(dists, axis=0))
+        tau_block_ids = np.ma.array(
+            np.argmax(valid, axis=0), mask=~np.any(valid, axis=0)
+        )
         return tau_block_ids
 
     def _find_tau_block_polar_coordinates(self):
         """Find polar coordinates of P_mu points relative to their tau blocks."""
         points = self.state.quantized_boundary_points - self.state.tau_block_centers
         return np.ma.array(
-            np.stack([
-                np.linalg.norm(points, axis=2),
-                np.mod(np.arctan2(points[:, :, 1], points[:, :, 0]) - self.state.tau_ref_thetas, 2 * np.pi)
-            ], axis=2),
-            mask=points.mask
+            np.stack(
+                [
+                    np.linalg.norm(points, axis=2),
+                    np.mod(
+                        np.arctan2(points[:, :, 1], points[:, :, 0])
+                        - self.state.tau_ref_thetas,
+                        2 * np.pi,
+                    ),
+                ],
+                axis=2,
+            ),
+            mask=points.mask,
         )
 
     def _find_poisson_kernel_values(self):
@@ -263,8 +337,14 @@ class volkovSolver(PDESolver):
                     continue
 
                 poisson_kernel[i, j] = self.poisson_calc.calculate(
-                    block_type_tau[i, j], nu_ij[i, j, 0], nu_ij[i, j, 1],
-                    r_[i, j], r0_tau[i, j], theta_[i, j], eta_tau[i, j], alpha_j[i, j]
+                    block_type_tau[i, j],
+                    nu_ij[i, j, 0],
+                    nu_ij[i, j, 1],
+                    r_[i, j],
+                    r0_tau[i, j],
+                    theta_[i, j],
+                    eta_tau[i, j],
+                    alpha_j[i, j],
                 )
 
         return poisson_kernel
@@ -274,13 +354,19 @@ class volkovSolver(PDESolver):
         tau_carrier_function_values = np.ma.zeros_like(self.state.theta_mu)
         mu_carrier_function_values = np.ma.zeros_like(self.state.theta_mu)
 
-        mu_block_boundary_identifiers = np.squeeze(self.state.block_nu.dot(np.array([[2], [1]])))
-        tau_block_boundary_identifiers = mu_block_boundary_identifiers[self.state.tau_block_ids]
-        tau_block_boundary_identifiers.mask = tau_block_boundary_identifiers.mask | self.state.tau_block_ids.mask
+        mu_block_boundary_identifiers = np.squeeze(
+            self.state.block_nu.dot(np.array([[2], [1]]))
+        )
+        tau_block_boundary_identifiers = mu_block_boundary_identifiers[
+            self.state.tau_block_ids
+        ]
+        tau_block_boundary_identifiers.mask = (
+            tau_block_boundary_identifiers.mask | self.state.tau_block_ids.mask
+        )
 
         tau_block_kind_identifiers = np.ma.masked_array(
             self.state.block_type[self.state.tau_block_ids],
-            mask=self.state.tau_block_ids.mask
+            mask=self.state.tau_block_ids.mask,
         )
 
         N, M = tau_carrier_function_values.shape
@@ -289,7 +375,10 @@ class volkovSolver(PDESolver):
         # Calculate tau carrier function values
         for i in range(N):
             for j in range(M):
-                if not (tau_carrier_function_values.mask[i, j] or self.state.tau_block_ids.mask[i, j]):
+                if not (
+                    tau_carrier_function_values.mask[i, j]
+                    or self.state.tau_block_ids.mask[i, j]
+                ):
                     tau_id_ = self.state.tau_block_ids[i, j]
                     tau_alpha_j = self.state.alpha_mu[tau_id_]
                     r_ = self.state.tau_block_polar_coordinates[i, j, 0]
@@ -300,7 +389,12 @@ class volkovSolver(PDESolver):
                     tau_carrier_function_values[i, j] = self.carrier_calc.calculate(
                         tau_block_kind_identifiers[i, j],
                         tau_block_boundary_identifiers[i, j],
-                        r_, theta_, k, a_, b_, tau_alpha_j
+                        r_,
+                        theta_,
+                        k,
+                        a_,
+                        b_,
+                        tau_alpha_j,
                     )
 
         # Calculate mu carrier function values
@@ -317,28 +411,46 @@ class volkovSolver(PDESolver):
                     mu_carrier_function_values[i, j] = self.carrier_calc.calculate(
                         self.state.block_type[mu_id_],
                         mu_block_boundary_identifiers[mu_id_],
-                        r_, theta_, k, a_, b_, alpha_j
+                        r_,
+                        theta_,
+                        k,
+                        a_,
+                        b_,
+                        alpha_j,
                     )
 
         self.state.tau_carrier_function_values = tau_carrier_function_values
         self.state.mu_carrier_function_values = mu_carrier_function_values
 
-
     # Visualization methods - delegate to visualization module
     def plot_solution(self, ax, vmin=None, vmax=None):
         """Plot the solution on the given axis."""
         from ..visualization.volkov_plots import plot_solution_heatmap
+
         plot_solution_heatmap(self, ax, vmin, vmax)
 
-    def plot_block_covering(self, ax, uncovered_points=None, show_boundary_conditions=True,
-                           show_quantized_boundaries=False):
+    def plot_block_covering(
+        self,
+        ax,
+        uncovered_points=None,
+        show_boundary_conditions=True,
+        show_quantized_boundaries=False,
+    ):
         """Plot the block covering visualization."""
         from ..visualization.volkov_plots import plot_block_covering
-        plot_block_covering(self, ax, uncovered_points, show_boundary_conditions, show_quantized_boundaries)
+
+        plot_block_covering(
+            self,
+            ax,
+            uncovered_points,
+            show_boundary_conditions,
+            show_quantized_boundaries,
+        )
 
     def plot_gradient(self, ax, decimation_factor=2, scale=20):
         """Plot the gradient field of the solution."""
         from ..visualization.volkov_plots import plot_gradient_field
+
         plot_gradient_field(self, ax, decimation_factor, scale)
 
     def initialize_solution(self):
@@ -349,8 +461,13 @@ class volkovSolver(PDESolver):
         """
         # Create the solution state with the blocks we already have
         self.state = SolutionState.from_polygon_and_blocks(
-            self.poly, self.blocks, self.delta, self.n,
-            self.boundary_conditions, self.is_dirichlet, self.tol
+            self.poly,
+            self.blocks,
+            self.delta,
+            self.n,
+            self.boundary_conditions,
+            self.is_dirichlet,
+            self.tol,
         )
 
         # Copy over the grid arrays we already created
@@ -373,7 +490,9 @@ class volkovSolver(PDESolver):
         """
         # Create first and second kind blocks using the block covering strategy
         vertex_blocks = self.block_covering._create_first_kind_blocks(self.poly)
-        edge_blocks = self.block_covering._create_second_kind_blocks(self.poly, vertex_blocks, len(vertex_blocks))
+        edge_blocks = self.block_covering._create_second_kind_blocks(
+            self.poly, vertex_blocks, len(vertex_blocks)
+        )
 
         self.blocks = vertex_blocks + edge_blocks
         self.N = len(vertex_blocks)
@@ -404,7 +523,7 @@ class volkovSolver(PDESolver):
         # Check each block for points inside it
         # Keep track of remaining points to check for next blocks
         for blk in self.blocks:
-            inside_mask = blk.is_inside(remaining_points)
+            inside_mask = blk.is_inside(remaining_points, self.poly)
             inside_points = remaining_points[inside_mask]
             self.inside_block_ids_[X[inside_mask], Y[inside_mask]] = blk.id_
             if len(inside_points) > 0:
@@ -435,11 +554,15 @@ class volkovSolver(PDESolver):
         visited = uncovered_points.mask
 
         # Get all constraining edges (main polygon + holes)
-        edge_starts, edge_ends, _ = self.block_covering._get_all_edges_unified(self.poly)
+        edge_starts, edge_ends, _ = self.block_covering._get_all_edges_unified(
+            self.poly
+        )
 
         # Get coordinates of unmasked points
         y_coords, x_coords = np.where(~uncovered_points.mask)
-        points = np.column_stack((x_coords * self.delta + self.x_min, y_coords * self.delta + self.y_min))
+        points = np.column_stack(
+            (x_coords * self.delta + self.x_min, y_coords * self.delta + self.y_min)
+        )
 
         # Randomize order of processing points
         indices = np.random.permutation(len(points))
@@ -456,7 +579,11 @@ class volkovSolver(PDESolver):
                 continue
 
             # Calculate minimum distance from ALL edges (main + holes) to determine radius
-            radius = np.min(self.block_covering._distances_from_edges(edge_starts, edge_ends, current_center))
+            radius = np.min(
+                self.block_covering._distances_from_edges(
+                    edge_starts, edge_ends, current_center
+                )
+            )
 
             # Create third kind block with calculated center and radius
             r0 = self.radial_heuristic * radius
@@ -467,10 +594,14 @@ class volkovSolver(PDESolver):
             for hole in self.poly.holes:
                 # Check if block intersects with hole
                 for edge_id in range(hole.n_vertices):
-                    edge_distance = hole.distance_to_edge(current_center[0], current_center[1], edge_id)
+                    edge_distance = hole.distance_to_edge(
+                        current_center[0], current_center[1], edge_id
+                    )
                     if edge_distance < length:
                         # More precise check needed
-                        block_is_valid = self._validate_third_kind_block(current_center, length, hole)
+                        block_is_valid = self._validate_third_kind_block(
+                            current_center, length, hole
+                        )
                         if not block_is_valid:
                             break
                 if not block_is_valid:
@@ -479,13 +610,23 @@ class volkovSolver(PDESolver):
             if not block_is_valid:
                 continue
 
-            new_block = block(current_center, 2 * np.pi, length, r0, block_kind=3, id_=self.M,
-                            boundary_type='main', boundary_id=0)
+            new_block = block(
+                current_center,
+                2 * np.pi,
+                length,
+                r0,
+                block_kind=3,
+                id_=self.M,
+                boundary_type="main",
+                boundary_id=0,
+            )
 
             # Find all points connected to this one
             # Check distances to all unvisited points
             distances = np.linalg.norm(points - current_center, axis=1)
-            neighbors = np.where((distances <= length) & (~visited[y_coords, x_coords]))[0]
+            neighbors = np.where(
+                (distances <= length) & (~visited[y_coords, x_coords])
+            )[0]
 
             # Update visited array for neighbors
             visited[y_coords[neighbors], x_coords[neighbors]] = True
@@ -566,25 +707,36 @@ class volkovSolver(PDESolver):
                     if 0 <= grid_x < self.nx and 0 <= grid_y < self.ny:
                         if not solution.mask[grid_y, grid_x]:
                             solution_value = solution[grid_y, grid_x]
-                            expected_value = sum(bc[k] * point[0]**k for k in range(len(bc)))
+                            expected_value = sum(
+                                bc[k] * point[0] ** k for k in range(len(bc))
+                            )
 
                             if is_dirichlet:
                                 error = abs(solution_value - expected_value)
-                                hole_errors.append({
-                                    "type": "Dirichlet",
-                                    "edge": edge_id,
-                                    "point": point.tolist(),
-                                    "solution_value": float(solution_value),
-                                    "expected_value": float(expected_value),
-                                    "error": float(error)
-                                })
+                                hole_errors.append(
+                                    {
+                                        "type": "Dirichlet",
+                                        "edge": edge_id,
+                                        "point": point.tolist(),
+                                        "solution_value": float(solution_value),
+                                        "expected_value": float(expected_value),
+                                        "error": float(error),
+                                    }
+                                )
 
-            validation_results["holes"].append({
-                "hole_id": hole_id,
-                "errors": hole_errors,
-                "max_error": max([e["error"] for e in hole_errors]) if hole_errors else 0.0,
-                "mean_error": sum([e["error"] for e in hole_errors]) / len(hole_errors) if hole_errors else 0.0
-            })
+            validation_results["holes"].append(
+                {
+                    "hole_id": hole_id,
+                    "errors": hole_errors,
+                    "max_error": max([e["error"] for e in hole_errors])
+                    if hole_errors
+                    else 0.0,
+                    "mean_error": sum([e["error"] for e in hole_errors])
+                    / len(hole_errors)
+                    if hole_errors
+                    else 0.0,
+                }
+            )
 
         return validation_results
 
@@ -617,14 +769,18 @@ class volkovSolver(PDESolver):
 
         # Find points with unusually high gradients
         high_gradient_threshold = mean_gradient + 3 * np.std(valid_gradients)
-        high_gradient_locations = np.where((gradient_magnitude > high_gradient_threshold) & valid_mask)
+        high_gradient_locations = np.where(
+            (gradient_magnitude > high_gradient_threshold) & valid_mask
+        )
 
         return {
             "max_gradient": float(max_gradient),
             "mean_gradient": float(mean_gradient),
             "std_gradient": float(np.std(valid_gradients)),
             "high_gradient_points": len(high_gradient_locations[0]),
-            "continuity_score": float(mean_gradient / max_gradient) if max_gradient > 0 else 1.0
+            "continuity_score": float(mean_gradient / max_gradient)
+            if max_gradient > 0
+            else 1.0,
         }
 
     # Backward compatibility properties

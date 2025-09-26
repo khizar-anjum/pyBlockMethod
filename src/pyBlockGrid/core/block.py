@@ -3,10 +3,24 @@
 
 import numpy as np
 
+from pyBlockGrid.core.polygon import polygon
+
+
 class block:
-    def __init__(self, center : np.ndarray, angle : float, length : float, r0 : float, block_kind : int,
-                 id_ : int = None, edge_i_index : int = None, edge_j_index : int = None,
-                 boundary_type : str = 'main', boundary_id : int = 0, vertex_id : int = None):
+    def __init__(
+        self,
+        center: np.ndarray,
+        angle: float,
+        length: float,
+        r0: float,
+        block_kind: int,
+        id_: int = None,
+        edge_i_index: int = None,
+        edge_j_index: int = None,
+        boundary_type: str = "main",
+        boundary_id: int = 0,
+        vertex_id: int = None,
+    ):
         """
         Initialize the block class. Blocks are the basic building blocks for the block grid method. They can be of three kinds:
         1. First kind: sectors extending from the vertex
@@ -32,21 +46,53 @@ class block:
         """
         self.center = center
         self.angle = angle
-        self.length = length # radius of the basic block! (radius r)
-        self.r0 = r0 # radius of the extended block! length (r) < r0
+        self.length = length  # radius of the basic block! (radius r)
+        self.r0 = r0  # radius of the extended block! length (r) < r0
         self.block_kind = block_kind
-        self.id_ = id_ # id of the block, used for indexing, and finding overlaps between blocks
-        self.edge_i_index = edge_i_index # index of the edge vector from which the block extends, None for third kind blocks
-        self.edge_j_index = edge_j_index # index of the edge vector to which the block extends, None for second and third kind blocks
-        self.inner_points = np.empty((0, 2)) # inner points of the block from the meshgrid, in global coordinates
+        self.id_ = id_  # id of the block, used for indexing, and finding overlaps between blocks
+        self.edge_i_index = edge_i_index  # index of the edge vector from which the block extends, None for third kind blocks
+        self.edge_j_index = edge_j_index  # index of the edge vector to which the block extends, None for second and third kind blocks
+        self.inner_points = np.empty(
+            (0, 2)
+        )  # inner points of the block from the meshgrid, in global coordinates
 
         # Boundary identification for hole support
-        self.boundary_type = boundary_type # 'main' for main polygon, 'hole' for holes
-        self.boundary_id = boundary_id # 0 for main polygon, hole index for holes
-        self.vertex_id = vertex_id # vertex index within hole for hole vertex blocks
+        self.boundary_type = boundary_type  # 'main' for main polygon, 'hole' for holes
+        self.boundary_id = boundary_id  # 0 for main polygon, hole index for holes
+        self.vertex_id = vertex_id  # vertex index within hole for hole vertex blocks
 
-    def is_inside(self, points : np.ma.masked_array):
+    def is_inside(self, points: np.ma.masked_array, poly: polygon):
         # Vector from block center to points
         v = points - self.center
-        dist = np.ma.masked_array(np.linalg.norm(v, axis = 1), mask = points.mask[:, 0])
-        return dist < self.length
+        dist = np.ma.masked_array(np.linalg.norm(v, axis=1), mask=points.mask[:, 0])
+
+        # Radial constraint
+        inside_radial = dist < self.length
+
+        # For third kind blocks (full circles), only radial constraint matters
+        if self.block_kind == 3:
+            return inside_radial
+
+        # Angular constraint for first and second kind blocks
+        # Get the edges based on boundary type (main polygon or hole)
+        if self.boundary_type == "hole":
+            edges = poly.holes[self.boundary_id].edges
+        else:
+            edges = poly.edges
+
+        # Calculate reference angle based on block type
+        if self.block_kind == 1:  # First kind (vertex block)
+            # Reference angle is the direction of edge_j
+            ref_angle = np.arctan2(
+                edges[self.edge_j_index][1], edges[self.edge_j_index][0]
+            )
+        else:  # Second kind (edge block)
+            edge_vec = edges[self.edge_i_index]
+            ref_angle = np.arctan2(edge_vec[1], edge_vec[0])
+
+        # Check angular constraint using relative angles
+        point_angles = np.arctan2(v[:, 1], v[:, 0])
+        relative_angles = np.mod(point_angles - ref_angle, 2 * np.pi)
+        inside_angular = relative_angles <= self.angle
+
+        return inside_radial & inside_angular
