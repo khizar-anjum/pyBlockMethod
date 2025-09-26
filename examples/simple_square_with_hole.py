@@ -63,10 +63,10 @@ def main():
             [0.4, 0.4],  # Top-right
             [-0.4, 0.4],  # Bottom-right
         ]
-    )  # the array is already clockwise
+    )[::-1]  # the array is already clockwise
 
     # Boundary conditions for hole (cold on all sides)
-    hole_bc = [[0.0], [0.0], [0.0], [0.0]]
+    hole_bc = [[0.0], [0.0], [0.0], [1.0]]
     hole_is_dirichlet = [True, True, True, True]
 
     # Add hole to polygon
@@ -92,8 +92,8 @@ def main():
         poly=poly,
         boundary_conditions=boundary_conditions,
         is_dirichlet=is_dirichlet,
-        delta=0.01,  # Grid spacing
-        n=50,  # Number of angular divisions
+        delta=0.05,  # Grid spacing
+        n=20,  # Number of angular divisions
         max_iter=10,  # Maximum iterations
         overlap_heuristic=0.1,  # Overlap factor
         radial_heuristic=0.9,  # Radial overlap factor

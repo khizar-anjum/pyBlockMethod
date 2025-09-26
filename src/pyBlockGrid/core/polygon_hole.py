@@ -42,7 +42,7 @@ class PolygonHole:
         self.n_vertices = len(self.vertices)
 
         # Ensure clockwise ordering
-        self.vertices = self._ensure_clockwise(self.vertices)
+        assert self.verify_vertex_order(), "Vertices are not ordered clockwise"
 
         # Compute geometric properties
         self.edges = self._compute_edges()
@@ -51,7 +51,7 @@ class PolygonHole:
         # Validate the hole
         self.validate()
 
-    def _ensure_clockwise(self, vertices):
+    def verify_vertex_order(self):
         """Ensure vertices are in clockwise order.
 
         Parameters:
@@ -61,16 +61,17 @@ class PolygonHole:
             np.ndarray: Vertices in clockwise order
         """
         # Calculate signed area using shoelace formula
-        n = len(vertices)
+        n = len(self.vertices)
         signed_area = 0
         for i in range(n):
             j = (i + 1) % n
-            signed_area += vertices[i][0] * vertices[j][1] - vertices[i][1] * vertices[j][0]
+            signed_area += (
+                self.vertices[i][0] * self.vertices[j][1]
+                - self.vertices[i][1] * self.vertices[j][0]
+            )
 
-        # If positive (counterclockwise), reverse the order
-        if signed_area > 0:
-            return vertices[::-1]
-        return vertices
+        # If positive it is counterclockwise
+        return signed_area < 0
 
     def _compute_edges(self):
         """Compute edge vectors for the hole.
@@ -170,19 +171,25 @@ class PolygonHole:
 
         # Check boundary conditions match edge count
         if len(self.boundary_conditions) != self.n_vertices:
-            raise ValueError(f"Boundary conditions count ({len(self.boundary_conditions)}) "
-                           f"must match vertex count ({self.n_vertices})")
+            raise ValueError(
+                f"Boundary conditions count ({len(self.boundary_conditions)}) "
+                f"must match vertex count ({self.n_vertices})"
+            )
 
         if len(self.is_dirichlet) != self.n_vertices:
-            raise ValueError(f"Dirichlet flags count ({len(self.is_dirichlet)}) "
-                           f"must match vertex count ({self.n_vertices})")
+            raise ValueError(
+                f"Dirichlet flags count ({len(self.is_dirichlet)}) "
+                f"must match vertex count ({self.n_vertices})"
+            )
 
         # Verify clockwise orientation
         signed_area = 0
         for i in range(self.n_vertices):
             j = (i + 1) % self.n_vertices
-            signed_area += self.vertices[i][0] * self.vertices[j][1] - \
-                          self.vertices[i][1] * self.vertices[j][0]
+            signed_area += (
+                self.vertices[i][0] * self.vertices[j][1]
+                - self.vertices[i][1] * self.vertices[j][0]
+            )
 
         if signed_area > 0:
             raise ValueError("Hole vertices must be in clockwise order")
@@ -235,7 +242,7 @@ class PolygonHole:
         point_vec = np.array([x, y]) - start
 
         # Project point onto edge
-        t = np.dot(point_vec, edge_vec) / (edge_length ** 2)
+        t = np.dot(point_vec, edge_vec) / (edge_length**2)
         t = np.clip(t, 0, 1)  # Clamp to edge segment
 
         # Find nearest point on edge
@@ -258,6 +265,8 @@ class PolygonHole:
 
     def __repr__(self):
         """Detailed representation of the hole."""
-        return (f"PolygonHole(vertices={self.n_vertices}, "
-                f"area={self.area():.4f}, "
-                f"clockwise=True)")
+        return (
+            f"PolygonHole(vertices={self.n_vertices}, "
+            f"area={self.area():.4f}, "
+            f"clockwise=True)"
+        )

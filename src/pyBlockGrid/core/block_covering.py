@@ -167,21 +167,38 @@ class BlockCoveringStrategy:
             length = self.radial_heuristic * r0
 
             # Create first kind block at vertex
-            vertex_blocks.append(
-                block(
-                    vertex,
-                    angle,
-                    length,
-                    r0,
-                    block_kind=1,
-                    id_=block_id,
-                    edge_i_index=vertex_id - 1,
-                    edge_j_index=vertex_id,
-                    boundary_type=boundary_type,
-                    boundary_id=boundary_id,
-                    vertex_id=vertex_id,
+            if boundary_type == "main":
+                vertex_blocks.append(
+                    block(
+                        vertex,
+                        angle,
+                        length,
+                        r0,
+                        block_kind=1,
+                        id_=block_id,
+                        edge_i_index=(vertex_id - 1) % num_vertices,
+                        edge_j_index=vertex_id,
+                        boundary_type=boundary_type,
+                        boundary_id=boundary_id,
+                        vertex_id=vertex_id,
+                    )
                 )
-            )
+            else:
+                vertex_blocks.append(
+                    block(
+                        vertex,
+                        angle,
+                        length,
+                        r0,
+                        block_kind=1,
+                        id_=block_id,
+                        edge_i_index=(vertex_id - 1) % num_hole_vertices,
+                        edge_j_index=vertex_id,
+                        boundary_type=boundary_type,
+                        boundary_id=boundary_id,
+                        vertex_id=vertex_id,
+                    )
+                )
 
             block_id += 1
 
