@@ -77,7 +77,7 @@ def main():
 
     # Set boundary conditions for main polygon:
     # Temperature = 1 on bottom edge, 0 elsewhere (Dirichlet conditions)
-    boundary_conditions = [[0.0], [1.0], [0.0], [0.0]]
+    boundary_conditions = [[0.0], [0.0], [0.0], [0.0]]
     is_dirichlet = [True] * 4  # Dirichlet conditions on all edges
 
     print("\nBoundary conditions:")
@@ -93,10 +93,10 @@ def main():
         boundary_conditions=boundary_conditions,
         is_dirichlet=is_dirichlet,
         delta=0.02,  # Grid spacing
-        n=20,  # Number of angular divisions
+        n=30,  # Number of angular divisions
         max_iter=10,  # Maximum iterations
-        overlap_heuristic=0.1,  # Overlap factor
-        radial_heuristic=0.85,  # Radial overlap factor
+        overlap_heuristic=0.3,  # Overlap factor
+        radial_heuristic=0.84,  # Radial overlap factor
     )
 
     # Find block covering
@@ -174,58 +174,43 @@ def main():
     print("Creating visualization...")
     print("=" * 50)
 
-    if solution_computed:
-        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
-    else:
-        fig, ax1 = plt.subplots(1, 1, figsize=(8, 6))
-
-    # Plot 1: Block covering with boundary conditions
-    solver.plot_block_covering(
-        ax=ax1, show_boundary_conditions=True, show_quantized_boundaries=False
-    )
-    ax1.set_title("Block Covering with Boundary Conditions\n(Hole-aware Volkov Method)")
-    ax1.set_xlabel("x")
-    ax1.set_ylabel("y")
-
-    if solution_computed:
-        # Plot 2: Solution heatmap
-        solver.plot_solution(ax2)
-        ax2.set_title("Solution Heatmap\n(Temperature Distribution)")
-        ax2.set_xlabel("x")
-        ax2.set_ylabel("y")
-
-        # Plot 3: Gradient field
-        solver.plot_gradient(ax3, decimation_factor=3, scale=15)
-        ax3.set_title("Solution Gradient Field\n(Heat Flow)")
-        ax3.set_xlabel("x")
-        ax3.set_ylabel("y")
-
-        plt.suptitle(
-            "Square with Square Hole - Complete Volkov Solution",
-            fontsize=14,
-            fontweight="bold",
-        )
-    else:
-        plt.suptitle(
-            "Square with Square Hole - Volkov Block Method",
-            fontsize=14,
-            fontweight="bold",
-        )
-
-    plt.tight_layout()
-
-    # Save figure
+    # Save folder
     plot_folder = "plots"
     if not os.path.exists(plot_folder):
         os.makedirs(plot_folder)
 
-    if solution_computed:
-        filename = os.path.join(plot_folder, "square_with_hole_solution.png")
-    else:
-        filename = os.path.join(plot_folder, "square_with_hole_blocks.png")
+    # Plot 1: Block covering with boundary conditions
+    fig1, ax1 = plt.subplots(1, 1, figsize=(6, 6))
+    solver.plot_block_covering(
+        ax=ax1, show_boundary_conditions=True, show_quantized_boundaries=False
+    )
+    ax1.set_xlabel("x")
+    ax1.set_ylabel("y")
+    plt.tight_layout()
+    filename1 = os.path.join(plot_folder, "square_with_hole_blocks.pdf")
+    plt.savefig(filename1, dpi=150)
+    print(f"Block covering saved to '{filename1}'")
 
-    plt.savefig(filename, dpi=150)
-    print(f"\nVisualization saved to '{filename}'")
+    if solution_computed:
+        # Plot 2: Solution heatmap
+        fig2, ax2 = plt.subplots(1, 1, figsize=(6, 6))
+        solver.plot_solution(ax2)
+        ax2.set_xlabel("x")
+        ax2.set_ylabel("y")
+        plt.tight_layout()
+        filename2 = os.path.join(plot_folder, "square_with_hole_solution.pdf")
+        plt.savefig(filename2, dpi=150)
+        print(f"Solution heatmap saved to '{filename2}'")
+
+        # Plot 3: Gradient field
+        fig3, ax3 = plt.subplots(1, 1, figsize=(6, 6))
+        solver.plot_gradient(ax3, decimation_factor=4, scale=35)
+        ax3.set_xlabel("x")
+        ax3.set_ylabel("y")
+        plt.tight_layout()
+        filename3 = os.path.join(plot_folder, "square_with_hole_gradient.pdf")
+        plt.savefig(filename3, dpi=150)
+        print(f"Gradient field saved to '{filename3}'")
 
     plt.show()
 

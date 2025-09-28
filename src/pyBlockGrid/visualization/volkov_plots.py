@@ -303,6 +303,8 @@ def plot_solution_heatmap(solver, ax, vmin=None, vmax=None):
         vmin: Minimum value for colormap scaling
         vmax: Maximum value for colormap scaling
     """
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+
     # Plot heatmap with masked data
     im = ax.pcolormesh(
         solver.state.X,
@@ -313,7 +315,12 @@ def plot_solution_heatmap(solver, ax, vmin=None, vmax=None):
         vmin=vmin,
         vmax=vmax,
     )
-    plt.colorbar(im, ax=ax)
+
+    # Use axes divider to create colorbar with exact same height as plot
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="5%", pad=0.1)
+    plt.colorbar(im, cax=cax)
+
     ax.set_aspect("equal")
 
 

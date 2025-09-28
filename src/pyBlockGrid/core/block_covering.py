@@ -331,7 +331,7 @@ class BlockCoveringStrategy:
 
         # Calculate relaxed distance using actual radii and overlap heuristic
         d_relaxed = (
-            gap_distance + 2 * min(start_radius, end_radius) * self.overlap_heuristic
+            gap_distance + min(start_radius, end_radius) * self.overlap_heuristic
         )
 
         # Base case: gap too small for meaningful block
