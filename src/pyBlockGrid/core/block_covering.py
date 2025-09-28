@@ -330,7 +330,9 @@ class BlockCoveringStrategy:
         gap_distance = np.linalg.norm(end_vertex - start_vertex)
 
         # Calculate relaxed distance using actual radii and overlap heuristic
-        d_relaxed = gap_distance + (start_radius + end_radius) * self.overlap_heuristic
+        d_relaxed = (
+            gap_distance + 2 * min(start_radius, end_radius) * self.overlap_heuristic
+        )
 
         # Base case: gap too small for meaningful block
         min_threshold = 1e-6  # Minimum meaningful gap size

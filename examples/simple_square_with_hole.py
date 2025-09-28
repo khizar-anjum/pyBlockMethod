@@ -96,7 +96,7 @@ def main():
         n=20,  # Number of angular divisions
         max_iter=10,  # Maximum iterations
         overlap_heuristic=0.1,  # Overlap factor
-        radial_heuristic=0.9,  # Radial overlap factor
+        radial_heuristic=0.85,  # Radial overlap factor
     )
 
     # Find block covering
@@ -175,9 +175,9 @@ def main():
     print("=" * 50)
 
     if solution_computed:
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 12))
+        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
     else:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+        fig, ax1 = plt.subplots(1, 1, figsize=(8, 6))
 
     # Plot 1: Block covering with boundary conditions
     solver.plot_block_covering(
@@ -187,60 +187,18 @@ def main():
     ax1.set_xlabel("x")
     ax1.set_ylabel("y")
 
-    # Plot 2: Domain visualization
-    ax2.set_title("Valid Domain\n(Inside main, outside hole)")
-
-    # Create a grid to show the domain
-    x = np.linspace(-1.5, 1.5, 100)
-    y = np.linspace(-1.5, 1.5, 100)
-    X, Y = np.meshgrid(x, y)
-
-    # Test each point to see if it's in the valid domain
-    Z = np.zeros_like(X)
-    for i in range(X.shape[0]):
-        for j in range(X.shape[1]):
-            if poly._point_in_polygon(X[i, j], Y[i, j]):
-                Z[i, j] = 1.0
-
-    # Show valid domain
-    ax2.contourf(X, Y, Z, levels=[0, 0.5, 1], colors=["white", "lightblue"], alpha=0.7)
-    ax2.contour(X, Y, Z, levels=[0.5], colors="black", linewidths=2)
-
-    # Overlay the polygon boundaries
-    poly.plot(ax=ax2, show_holes=True)
-    ax2.set_xlim(-1.5, 1.5)
-    ax2.set_ylim(-1.5, 1.5)
-    ax2.set_aspect("equal")
-    ax2.grid(True, alpha=0.3)
-    ax2.set_xlabel("x")
-    ax2.set_ylabel("y")
-
-    # Add annotations
-    ax2.text(
-        0, 0, "HOLE\n(excluded)", ha="center", va="center", fontsize=12, color="red"
-    )
-    ax2.annotate(
-        "Hot boundary\n(T=1.0)",
-        xy=(0, -1),
-        xytext=(0, -1.3),
-        arrowprops=dict(arrowstyle="->", color="red", lw=2),
-        fontsize=10,
-        ha="center",
-        color="red",
-    )
-
     if solution_computed:
-        # Plot 3: Solution heatmap
-        solver.plot_solution(ax3)
-        ax3.set_title("Solution Heatmap\n(Temperature Distribution)")
+        # Plot 2: Solution heatmap
+        solver.plot_solution(ax2)
+        ax2.set_title("Solution Heatmap\n(Temperature Distribution)")
+        ax2.set_xlabel("x")
+        ax2.set_ylabel("y")
+
+        # Plot 3: Gradient field
+        solver.plot_gradient(ax3, decimation_factor=3, scale=15)
+        ax3.set_title("Solution Gradient Field\n(Heat Flow)")
         ax3.set_xlabel("x")
         ax3.set_ylabel("y")
-
-        # Plot 4: Gradient field
-        solver.plot_gradient(ax4, decimation_factor=3, scale=15)
-        ax4.set_title("Solution Gradient Field\n(Heat Flow)")
-        ax4.set_xlabel("x")
-        ax4.set_ylabel("y")
 
         plt.suptitle(
             "Square with Square Hole - Complete Volkov Solution",
