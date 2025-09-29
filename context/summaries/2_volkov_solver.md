@@ -3,17 +3,21 @@
 ## Overview
 The `volkovSolver` class implements E.A. Volkov's block grid method for solving the Laplace equation on arbitrary polygonal domains. This method provides high-accuracy numerical solutions for boundary value problems with mixed Dirichlet/Neumann conditions.
 
-**REFACTORING STATUS**: ✅ **COMPLETED** - The monolithic 980-line implementation has been successfully refactored into a modular 484-line orchestrator that delegates to specialized mathematical and algorithmic modules while maintaining complete backward compatibility.
+**REFACTORING STATUS**: ✅ **COMPLETED** - The monolithic 980-line implementation has been successfully refactored into a modular orchestrator that delegates to specialized mathematical and algorithmic modules while maintaining complete backward compatibility.
+
+**HOLE SUPPORT STATUS**: ✅ **FULLY IMPLEMENTED & TESTED** - The solver now completely supports multiply-connected domains (polygons with holes), with full mathematical solution computation, validation, and visualization capabilities.
 
 ## Mathematical Foundation
 
 ### Problem Formulation
 Solves the boundary value problem:
 - **PDE**: -Δu = 0 in domain Ω (Laplace equation)
+- **Domain**: Simply or multiply-connected polygonal regions
 - **Boundary**: νⱼ·u + (1-νⱼ)·∂ⱼu = φⱼ on boundary Γⱼ
   - νⱼ = 1: Dirichlet condition (specified value)
   - νⱼ = 0: Neumann condition (specified derivative)
   - φⱼ: Polynomial boundary condition on edge j
+  - **NEW**: Separate boundary conditions for main polygon and each hole
 
 ## Core Algorithm Steps
 
@@ -27,6 +31,8 @@ Creates a covering of the polygonal domain using three types of blocks:
 - Angle equals interior angle at vertex
 - Radius determined by distance to non-adjacent edges
 - Number denoted as N
+- **NEW**: Created for both main polygon vertices and hole vertices
+- **NEW**: Considers all constraining edges (main + holes) for radius
 - **Implementation**: `BlockCovering._create_first_kind_blocks()`
 
 #### Second Kind Blocks (Edges)
@@ -35,6 +41,8 @@ Creates a covering of the polygonal domain using three types of blocks:
 - Adaptive sizing to prevent overlap
 - Can be broken into smaller blocks if needed
 - Number denoted as L (includes N)
+- **NEW**: Created for both main polygon edges and hole edges
+- **NEW**: Uses filtered edge constraints to avoid zero distances
 - **Implementation**: `BlockCovering._create_second_kind_blocks()`
 
 #### Third Kind Blocks (Interior)
@@ -42,6 +50,8 @@ Creates a covering of the polygonal domain using three types of blocks:
 - Placed using greedy algorithm
 - Size limited by distance to edges
 - Number denoted as M (total blocks)
+- **NEW**: Validates placement to ensure blocks don't overlap holes
+- **NEW**: Uses all constraining edges (main + holes) for sizing
 - **Implementation**: `BlockCovering._create_third_kind_blocks()`
 
 ### 2. Solution Initialization (`initialize_solution`)
@@ -200,8 +210,43 @@ Different formulations based on block type and boundary conditions:
 - `BlockCovering._create_third_kind_blocks()`: Interior block creation
 - `CoordinateTransforms.cartesian_to_polar()`: Coordinate conversions
 
+## Hole Support
+
+### Creating Domains with Holes
+```python
+# Create main polygon
+poly = polygon(main_vertices)
+
+# Add holes with boundary conditions
+hole = poly.add_hole(hole_vertices, hole_boundary_conditions, hole_is_dirichlet)
+```
+
+### Key Implementation Details
+1. **Hole Representation**:
+   - Holes use `PolygonHole` class with clockwise vertices
+   - Each hole maintains its own boundary conditions
+   - Automatic validation of hole placement
+
+2. **Block Generation**:
+   - First kind blocks created at all vertices (main + holes)
+   - Second kind blocks placed on all edges (main + holes)
+   - Third kind blocks validated to not overlap with holes
+
+3. **Grid Creation**:
+   - `polygon.is_inside()` now excludes points inside holes
+   - Vectorized implementation for efficiency
+   - Proper masking of invalid domain points
+
+4. **Edge Constraints**:
+   - `_get_all_constraining_edges()` unifies edge handling
+   - `_distances_from_all_edges_filtered()` excludes current edge
+   - Prevents zero-distance issues for blocks on edges
+
 ## Error Handling
-- Verifies counterclockwise vertex ordering
+- Verifies counterclockwise vertex ordering (main polygon)
+- Verifies clockwise vertex ordering (holes)
+- Validates holes are inside main polygon
+- Checks holes don't overlap
 - Checks boundary condition count matches edges
 - Validates heuristic parameter ranges
 - Optional solution uniqueness verification
