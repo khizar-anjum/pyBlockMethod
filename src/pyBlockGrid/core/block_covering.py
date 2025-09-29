@@ -329,14 +329,9 @@ class BlockCoveringStrategy:
         """
         gap_distance = np.linalg.norm(end_vertex - start_vertex)
 
-        # Calculate relaxed distance using actual radii and overlap heuristic
-        d_relaxed = (
-            gap_distance + min(start_radius, end_radius) * self.overlap_heuristic
-        )
-
         # Base case: gap too small for meaningful block
         min_threshold = 1e-6  # Minimum meaningful gap size
-        if d_relaxed < min_threshold:
+        if gap_distance < min_threshold:
             return [], block_id_counter
 
         # Calculate midpoint and try to place a block there
@@ -351,7 +346,7 @@ class BlockCoveringStrategy:
         actual_radius = self.radial_heuristic * max_allowed_radius
 
         # Check if single block can cover the relaxed gap
-        if 2 * actual_radius >= d_relaxed:
+        if 2 * actual_radius >= gap_distance:
             # Single block covers the gap
             new_block = block(
                 midpoint,
@@ -387,7 +382,8 @@ class BlockCoveringStrategy:
             # Recursively fill left gap (start to midpoint)
             left_blocks, next_id = self._fill_gap_recursive(
                 start_vertex,
-                midpoint - unit_edge_vector * actual_radius,
+                midpoint
+                - (1 - self.overlap_heuristic) * actual_radius * unit_edge_vector,
                 start_radius,
                 actual_radius,
                 edge_starts_filtered,
@@ -403,7 +399,8 @@ class BlockCoveringStrategy:
 
             # Recursively fill right gap (midpoint to end)
             right_blocks, next_id = self._fill_gap_recursive(
-                midpoint + unit_edge_vector * actual_radius,
+                midpoint
+                + (1 - self.overlap_heuristic) * actual_radius * unit_edge_vector,
                 end_vertex,
                 actual_radius,
                 end_radius,
@@ -461,12 +458,14 @@ class BlockCoveringStrategy:
         unit_edge_vector = (curr_vertex - prev_vertex) / distance
 
         # Determine start and end positions accounting for existing block coverage
-        if prev_block.r0 < curr_block.r0:
-            start_vertex = prev_vertex + prev_block.length * unit_edge_vector
-            end_vertex = curr_vertex - curr_block.length * unit_edge_vector
-        else:
-            start_vertex = prev_vertex + prev_block.length * unit_edge_vector
-            end_vertex = curr_vertex - curr_block.length * unit_edge_vector
+        start_vertex = (
+            prev_vertex
+            + (1 - self.overlap_heuristic) * prev_block.length * unit_edge_vector
+        )
+        end_vertex = (
+            curr_vertex
+            - (1 - self.overlap_heuristic) * curr_block.length * unit_edge_vector
+        )
 
         # Create edge arrays for constraint checking (exclude current edge)
         edge_starts, edge_ends, _ = self._get_all_edges_unified(poly)
