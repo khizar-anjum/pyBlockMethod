@@ -1,0 +1,49 @@
+// Benchmark: Unit square with parametric mesh density
+// Usage: FreeFem++ benchmark_unit_square.edp -n 20
+// Outputs: benchmark_unit_square_<n>.dat (solution on delta=0.05 grid)
+//          benchmark_unit_square_<n>_timing.dat (solve time in seconds)
+
+include "getARGV.idp"
+int n = getARGV("-n", 20);
+
+border bottom(t=0, 1) { x = t;   y = 0;   label = 1; }
+border right(t=0, 1)  { x = 1;   y = t;   label = 2; }
+border top(t=0, 1)    { x = 1-t; y = 1;   label = 3; }
+border left(t=0, 1)   { x = 0;   y = 1-t; label = 4; }
+
+// R3.5: time the FULL pipeline (mesh generation + assembly + solve).
+real t0 = clock();
+mesh Th = buildmesh(bottom(n) + right(n) + top(n) + left(n));
+
+fespace Vh(Th, P2);
+Vh u, v;
+
+// Evaluation grid matching Volkov solver (delta = 0.05)
+real delta = 0.05;
+real xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
+int nx = lround(ceil((xmax - xmin) / delta));
+int ny = lround(ceil((ymax - ymin) / delta));
+
+// --- hot_bottom: label 1 = 1.0, others = 0.0 ---
+solve hotbottom(u, v) = int2d(Th)(dx(u)*dx(v) + dy(u)*dy(v))
+    + on(1, u=1.0) + on(2, u=0.0) + on(3, u=0.0) + on(4, u=0.0);
+real elapsed = clock() - t0;
+
+// Export solution on regular grid
+{
+    ofstream f("benchmark_unit_square_" + n + ".dat");
+    f.scientific;
+    for (int j = 0; j < ny; j++)
+        for (int i = 0; i < nx; i++) {
+            real px = xmin + 0.5*delta + i*(xmax - xmin)/(nx - 1.0);
+            real py = ymin + 0.5*delta + j*(ymax - ymin)/(ny - 1.0);
+            f << px << " " << py << " " << u(px, py) << endl;
+        }
+}
+
+// Export timing
+{
+    ofstream f("benchmark_unit_square_" + n + "_timing.dat");
+    f.scientific;
+    f << elapsed << endl;
+}

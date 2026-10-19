@@ -1,0 +1,74 @@
+// FreeFEM++ reference solution for crowd dynamics geometry
+// Adapted from desvel.2narrowpass_obst.edp
+// Exports solution on a regular grid for comparison with Volkov solver
+
+int N=300;        // Fine mesh for reference solution
+real delta=0.005; // Grid spacing for export
+
+// Geometry coordinates (3 horizontal walls creating 2 narrow passages)
+real x1=0.35, y1=0.3, x2=1., y2=0.35;       // Wall 1
+real xx1=0.35, yy1=0.415, xx2=1., yy2=0.435; // Wall 2
+real xxx1=0.35, yyy1=0.5, xxx2=1., yyy2=0.55; // Wall 3
+
+// Boundary conditions: exits at passages have u=1, walls u=0
+func g=1;
+
+// Define boundary segments (counterclockwise)
+border l1(t=0,1)  {x=t; y=0; label=1;}                       // Bottom
+border l2(t=0,1)  {x=1; y=t*y1; label=2;}                    // Right lower
+border l3(t=0,1)  {x=x2+t*(x1-x2); y=y1; label=3;}          // Wall 1 bottom
+border l4(t=0,1)  {x=x1; y=y1+t*(y2-y1); label=4;}          // Wall 1 left
+border l5(t=0,1)  {x=x1+t*(x2-x1); y=y2; label=5;}          // Wall 1 top
+border l6(t=0,1)  {x=x2; y=y2+t*(yy1-y2); label=6;}         // Passage 1 (EXIT)
+border l7(t=0,1)  {x=xx2+t*(xx1-xx2); y=yy1; label=7;}      // Wall 2 bottom
+border l8(t=0,1)  {x=xx1; y=yy1+t*(yy2-yy1); label=8;}      // Wall 2 left
+border l9(t=0,1)  {x=xx1+t*(xx2-xx1); y=yy2; label=9;}      // Wall 2 top
+border l10(t=0,1) {x=xx2; y=yy2+t*(yyy1-yy2); label=10;}    // Passage 2 (EXIT)
+border l11(t=0,1) {x=xxx2+t*(xxx1-xxx2); y=yyy1; label=11;}  // Wall 3 bottom
+border l12(t=0,1) {x=xxx1; y=yyy1+t*(yyy2-yyy1); label=12;}  // Wall 3 left
+border l13(t=0,1) {x=xxx1+t*(xxx2-xxx1); y=yyy2; label=13;}  // Wall 3 top
+border l14(t=0,1) {x=xxx2; y=yyy2+t*(1-yyy2); label=14;}     // Right upper
+border l15(t=0,1) {x=xxx2-t; y=1; label=15;}                 // Top
+border l16(t=0,1) {x=0; y=1-t; label=16;}                    // Left
+
+// Build mesh with fine resolution
+mesh Th=buildmesh(l1(N)+l2(N)+l3(N)+l4(N)+l5(N)+l6(N)+l7(N)+
+                  l8(N)+l9(N)+l10(N)+l11(N)+l12(N)+l13(N)+l14(N)+l15(N)+l16(N));
+
+// Solve with P2 elements for high accuracy
+fespace Xh(Th,P2);
+Xh uh,vh;
+problem laplace(uh,vh)=int2d(Th)(dx(uh)*dx(vh)+dy(uh)*dy(vh))
+    +on(1,2,5,7,9,11,14,15,uh=0)
+    +on(6,10,uh=g);
+laplace;
+
+// Export solution on a regular grid
+int Nx = 1./delta + 1;
+int Ny = 1./delta + 1;
+real px, py, val;
+
+{
+  ofstream f("crowd_dynamics_reference.dat");
+  f << "# delta=" << delta << " Nx=" << Nx << " Ny=" << Ny << endl;
+  f << "# x y u" << endl;
+  for (int j=0; j<Ny; j++) {
+    for (int i=0; i<Nx; i++) {
+      px = i * delta;
+      py = j * delta;
+      // Check if point is inside the domain (not inside walls)
+      bool inWall1 = (px >= x1 && px <= x2 && py >= y1 && py <= y2);
+      bool inWall2 = (px >= xx1 && px <= xx2 && py >= yy1 && py <= yy2);
+      bool inWall3 = (px >= xxx1 && px <= xxx2 && py >= yyy1 && py <= yyy2);
+      if (inWall1 || inWall2 || inWall3) {
+        val = -999.0; // Sentinel for wall points
+      } else {
+        val = uh(px, py);
+      }
+      f << px << " " << py << " " << val << endl;
+    }
+  }
+}
+
+cout << "Reference solution exported to crowd_dynamics_reference.dat" << endl;
+cout << "Grid: " << Nx << " x " << Ny << " with delta=" << delta << endl;

@@ -1,0 +1,72 @@
+// L-shape: vertices [0,0],[2,0],[2,1],[1,1],[1,2],[0,2]
+// Edge 0 -> label 1 (bottom, len=2), Edge 1 -> label 2 (right-lower, len=1),
+// Edge 2 -> label 3 (inner-horiz, len=1), Edge 3 -> label 4 (inner-vert, len=1),
+// Edge 4 -> label 5 (top, len=1), Edge 5 -> label 6 (left, len=2)
+
+int n = 200; // ~200 points per unit length
+
+border b1(t=0, 1) { x = 2*t;   y = 0;     label = 1; } // (0,0) -> (2,0)
+border b2(t=0, 1) { x = 2;     y = t;     label = 2; } // (2,0) -> (2,1)
+border b3(t=0, 1) { x = 2-t;   y = 1;     label = 3; } // (2,1) -> (1,1)
+border b4(t=0, 1) { x = 1;     y = 1+t;   label = 4; } // (1,1) -> (1,2)
+border b5(t=0, 1) { x = 1-t;   y = 2;     label = 5; } // (1,2) -> (0,2)
+border b6(t=0, 1) { x = 0;     y = 2-2*t; label = 6; } // (0,2) -> (0,0)
+
+mesh Th = buildmesh(b1(2*n) + b2(n) + b3(n) + b4(n) + b5(n) + b6(2*n));
+
+fespace Vh(Th, P2);
+Vh u, v;
+
+// Grid parameters matching Volkov solver (delta = 0.05)
+real delta = 0.05;
+real xmin = 0.0, xmax = 2.0, ymin = 0.0, ymax = 2.0;
+int nx = lround(ceil((xmax - xmin) / delta));
+int ny = lround(ceil((ymax - ymin) / delta));
+
+// --- hot_bottom: label 1 = 1.0, others = 0.0 ---
+solve hotbottom(u, v) = int2d(Th)(dx(u)*dx(v) + dy(u)*dy(v))
+    + on(1, u=1.0) + on(2, u=0.0) + on(3, u=0.0)
+    + on(4, u=0.0) + on(5, u=0.0) + on(6, u=0.0);
+
+{
+    ofstream f("l_shape_hot_bottom.dat");
+    f.scientific;
+    for (int j = 0; j < ny; j++)
+        for (int i = 0; i < nx; i++) {
+            real px = xmin + 0.5*delta + i*(xmax - xmin)/(nx - 1.0);
+            real py = ymin + 0.5*delta + j*(ymax - ymin)/(ny - 1.0);
+            f << px << " " << py << " " << u(px, py) << endl;
+        }
+}
+
+// --- hot_left: label 6 = 1.0, others = 0.0 ---
+solve hotleft(u, v) = int2d(Th)(dx(u)*dx(v) + dy(u)*dy(v))
+    + on(1, u=0.0) + on(2, u=0.0) + on(3, u=0.0)
+    + on(4, u=0.0) + on(5, u=0.0) + on(6, u=1.0);
+
+{
+    ofstream f("l_shape_hot_left.dat");
+    f.scientific;
+    for (int j = 0; j < ny; j++)
+        for (int i = 0; i < nx; i++) {
+            real px = xmin + 0.5*delta + i*(xmax - xmin)/(nx - 1.0);
+            real py = ymin + 0.5*delta + j*(ymax - ymin)/(ny - 1.0);
+            f << px << " " << py << " " << u(px, py) << endl;
+        }
+}
+
+// --- mixed: label 1 = 1.0, label 4 = 0.5, others = 0.0 ---
+solve mixed(u, v) = int2d(Th)(dx(u)*dx(v) + dy(u)*dy(v))
+    + on(1, u=1.0) + on(2, u=0.0) + on(3, u=0.0)
+    + on(4, u=0.5) + on(5, u=0.0) + on(6, u=0.0);
+
+{
+    ofstream f("l_shape_mixed.dat");
+    f.scientific;
+    for (int j = 0; j < ny; j++)
+        for (int i = 0; i < nx; i++) {
+            real px = xmin + 0.5*delta + i*(xmax - xmin)/(nx - 1.0);
+            real py = ymin + 0.5*delta + j*(ymax - ymin)/(ny - 1.0);
+            f << px << " " << py << " " << u(px, py) << endl;
+        }
+}

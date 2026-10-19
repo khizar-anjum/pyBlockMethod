@@ -1,0 +1,55 @@
+// Benchmark: Square with hole, parametric mesh density
+// Usage: FreeFem++ benchmark_square_with_hole.edp -n 20
+// Outputs: benchmark_square_with_hole_<n>.dat, benchmark_square_with_hole_<n>_timing.dat
+
+include "getARGV.idp"
+int n = getARGV("-n", 20);
+int nh = lround(0.4 * n); // hole boundary points (proportional)
+
+// Outer boundary
+border bottom(t=0, 1) { x = t;   y = 0;   label = 1; }
+border right(t=0, 1)  { x = 1;   y = t;   label = 2; }
+border top(t=0, 1)    { x = 1-t; y = 1;   label = 3; }
+border left(t=0, 1)   { x = 0;   y = 1-t; label = 4; }
+
+// Hole boundary (clockwise for interior hole)
+border h1(t=0, 1) { x = 0.3+0.4*t; y = 0.3;     label = 5; }
+border h2(t=0, 1) { x = 0.7;       y = 0.3+0.4*t; label = 6; }
+border h3(t=0, 1) { x = 0.7-0.4*t; y = 0.7;     label = 7; }
+border h4(t=0, 1) { x = 0.3;       y = 0.7-0.4*t; label = 8; }
+
+// R3.5: time the FULL pipeline (mesh generation + assembly + solve).
+real t0 = clock();
+mesh Th = buildmesh(bottom(n) + right(n) + top(n) + left(n)
+                    + h1(-nh) + h2(-nh) + h3(-nh) + h4(-nh));
+
+fespace Vh(Th, P2);
+Vh u, v;
+
+real delta = 0.05;
+real xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
+int nx = lround(ceil((xmax - xmin) / delta));
+int ny = lround(ceil((ymax - ymin) / delta));
+
+// --- hot_bottom: outer label 1 = 1.0, hole labels = 0.0, others = 0.0 ---
+solve hotbottom(u, v) = int2d(Th)(dx(u)*dx(v) + dy(u)*dy(v))
+    + on(1, u=1.0) + on(2, u=0.0) + on(3, u=0.0) + on(4, u=0.0)
+    + on(5, u=0.0) + on(6, u=0.0) + on(7, u=0.0) + on(8, u=0.0);
+real elapsed = clock() - t0;
+
+{
+    ofstream f("benchmark_square_with_hole_" + n + ".dat");
+    f.scientific;
+    for (int j = 0; j < ny; j++)
+        for (int i = 0; i < nx; i++) {
+            real px = xmin + 0.5*delta + i*(xmax - xmin)/(nx - 1.0);
+            real py = ymin + 0.5*delta + j*(ymax - ymin)/(ny - 1.0);
+            f << px << " " << py << " " << u(px, py) << endl;
+        }
+}
+
+{
+    ofstream f("benchmark_square_with_hole_" + n + "_timing.dat");
+    f.scientific;
+    f << elapsed << endl;
+}

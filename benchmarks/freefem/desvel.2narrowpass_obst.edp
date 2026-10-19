@@ -1,0 +1,109 @@
+int N=150;
+real h=1./N;
+
+real x1=0.35;
+real y1=0.3;
+real x2=1.;
+real y2=0.35;
+real xx1=0.35;
+real yy1=0.415;
+real xx2=1.;
+real yy2=0.435;
+real xxx1=0.35;
+real yyy1=0.5;
+real xxx2=1.;
+real yyy2=0.55;
+real xxxx1=0.15;
+real yyyy1=0.415;
+real xxxx2=0.25;
+real yyyy2=0.55;
+int i,j;
+
+func g=1; //exp(-10*(y-(y2+yy1)/2.)^2);
+
+border l1(t=0,1) {x=t; y=0; label=1;}
+border l2(t=0,1) {x=1; y=t*y1; label=2;}
+border l3(t=0,1) {x=x2+t*(x1-x2); y=y1; label=3;}
+border l4(t=0,1) {x=x1; y=y1+t*(y2-y1); label=4;}
+border l5(t=0,1) {x=x1+t*(x2-x1); y=y2; label=5;}
+border l6(t=0,1) {x=x2; y=y2+t*(yy1-y2); label=6;}
+border l7(t=0,1) {x=xx2+t*(xx1-xx2); y=yy1; label=7;}
+border l8(t=0,1) {x=xx1; y=yy1+t*(yy2-yy1); label=8;}
+border l9(t=0,1) {x=xx1+t*(xx2-xx1); y=yy2; label=9;}
+border l10(t=0,1) {x=xx2; y=yy2+t*(yyy1-yy2); label=10;}
+border l11(t=0,1) {x=xxx2+t*(xxx1-xxx2); y=yyy1; label=11;}
+border l12(t=0,1) {x=xxx1; y=yyy1+t*(yyy2-yyy1); label=12;}
+border l13(t=0,1) {x=xxx1+t*(xxx2-xxx1); y=yyy2; label=13;}
+border l14(t=0,1) {x=xxx2; y=yyy2+t*(1-yyy2); label=14;}
+border l15(t=0,1) {x=xxx2-t; y=1; label=15;}
+border l16(t=0,1) {x=0; y=1-t; label=16;}
+border l17(t=0,1) {x=xxxx1+t*(xxxx2-xxxx1); y=yyyy1; label=17;}
+border l18(t=0,1) {x=xxxx2; y=yyyy1+t*(yyyy2-yyyy1); label=18;}
+border l19(t=0,1) {x=xxxx2+t*(xxxx1-xxxx2); y=yyyy2; label=19;}
+border l20(t=0,1) {x=xxxx1; y=yyyy2+t*(yyyy1-yyyy2); label=20;}
+
+mesh Th=buildmesh(l1(100)+l2(100)+l3(100)+l4(100)+l5(100)+l6(100)+l7(100)+
+		  l8(100)+l9(100)+l10(100)+l11(100)+l12(100)+l13(100)+l14(100)+l15(100)+l16(100)); // l17(-100)+l18(-100)+l19(-100)+l20(-100)
+plot(Th,fill=0,ps="mesh.eps");
+
+fespace Xh(Th,P1);
+Xh uh,vh;
+problem laplace(uh,vh)=int2d(Th)(dx(uh)*dx(vh)+dy(uh)*dy(vh))+on(1,2,5,7,9,11,14,15,uh=0)+on(6,10,uh=g);
+laplace;
+plot(uh,fill=1,nbiso=20,value=1,ps="solution.eps");
+
+real x,y,norm,gradx,grady;
+
+for (j=1; j<=N; j++)
+{
+ for(i=1; i<=N; i++)
+ {
+   // x=(2.*i-1.)/2.*h;
+   // y=(2.*j-1.)/2.*h;
+   x=(i-1.)*h;
+   y=(j-1.)*h;
+   norm=sqrt(dx(uh)(x,y)^2+dy(uh)(x,y)^2);
+   if (norm==0.)
+   {
+     norm = 1.;
+   }
+   if ((x>=x1 & x<=x2 & y>=y1 & y<=y2)|(x>=xx1 & x<= xx2 & y>=yy1 & y<=yy2)|(x>=xxx1 & x<=xxx2 & y>=yyy1 & y<=yyy2)) // |(x>=xxxx1 & x<=xxxx2 & y>=yyyy1 & y<=yyyy2)
+   {
+     gradx=0.;
+     grady=0.;
+   }
+   else
+   {
+     gradx=dx(uh)(x,y)/norm;
+     grady=dy(uh)(x,y)/norm;
+   }
+   ofstream f("desvel.data",append);
+   f << x << " " << y << " " << gradx << " " << grady << " " << uh(x,y) << "\n";
+ }
+}
+
+for (j=1; j<=N; j++)
+{
+ for(i=1; i<=N; i++)
+ {
+   x=(2.*i-1.)/2.*(2.5*h);
+   y=(2.*j-1.)/2.*(2.5*h);
+   norm=50*sqrt(dx(uh)(x,y)^2+dy(uh)(x,y)^2);
+   if (norm==0.)
+   {
+     norm = 1.;
+   }
+   if ((x>=x1 & x<=x2 & y>=y1 & y<=y2)|(x>=xx1 & x<= xx2 & y>=yy1 & y<=yy2)|(x>=xxx1 & x<=xxx2 & y>=yyy1 & y<=yyy2)) // |(x>=xxxx1 & x<=xxxx2 & y>=yyyy1 & y<=yyyy2)
+   {
+     gradx=0.;
+     grady=0.;
+   }
+   else
+   {
+     gradx=dx(uh)(x,y)/norm;
+     grady=dy(uh)(x,y)/norm;
+   }
+   ofstream f("desvel.data.plot",append);
+   f << x << " " << y << " " << gradx << " " << grady << "\n";
+ }
+}

@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyBlockGrid"
+version = "0.1.0"
+authors = [
+  { name="Khizar Anjum", email="khizaranjum28@gmail.com" },
+]
+description = "A Laplace equation solver on polygons using Volkov method"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: Other/Proprietary License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "numpy>=2.0",
+    "matplotlib>=3.8",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/khizar-anjum/pyBlockGrid"
+"Bug Tracker" = "https://github.com/khizar-anjum/pyBlockGrid/issues"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=6.0",
+    "pytest-cov",
+    "scipy",
+]

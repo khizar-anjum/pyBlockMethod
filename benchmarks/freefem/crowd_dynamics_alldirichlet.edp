@@ -1,0 +1,71 @@
+// FreeFEM++ reference: crowd dynamics geometry, ALL Dirichlet BCs
+// u=0 everywhere except the two passage exits (labels 6,10) where u=1
+// This matches what the Volkov solver uses (pure Dirichlet only)
+
+int N=300;
+real delta=0.005;
+
+real x1=0.35, y1=0.3, x2=1., y2=0.35;
+real xx1=0.35, yy1=0.415, xx2=1., yy2=0.435;
+real xxx1=0.35, yyy1=0.5, xxx2=1., yyy2=0.55;
+
+func g=1;
+
+border l1(t=0,1)  {x=t; y=0; label=1;}
+border l2(t=0,1)  {x=1; y=t*y1; label=2;}
+border l3(t=0,1)  {x=x2+t*(x1-x2); y=y1; label=3;}
+border l4(t=0,1)  {x=x1; y=y1+t*(y2-y1); label=4;}
+border l5(t=0,1)  {x=x1+t*(x2-x1); y=y2; label=5;}
+border l6(t=0,1)  {x=x2; y=y2+t*(yy1-y2); label=6;}
+border l7(t=0,1)  {x=xx2+t*(xx1-xx2); y=yy1; label=7;}
+border l8(t=0,1)  {x=xx1; y=yy1+t*(yy2-yy1); label=8;}
+border l9(t=0,1)  {x=xx1+t*(xx2-xx1); y=yy2; label=9;}
+border l10(t=0,1) {x=xx2; y=yy2+t*(yyy1-yy2); label=10;}
+border l11(t=0,1) {x=xxx2+t*(xxx1-xxx2); y=yyy1; label=11;}
+border l12(t=0,1) {x=xxx1; y=yyy1+t*(yyy2-yyy1); label=12;}
+border l13(t=0,1) {x=xxx1+t*(xxx2-xxx1); y=yyy2; label=13;}
+border l14(t=0,1) {x=xxx2; y=yyy2+t*(1-yyy2); label=14;}
+border l15(t=0,1) {x=xxx2-t; y=1; label=15;}
+border l16(t=0,1) {x=0; y=1-t; label=16;}
+
+mesh Th=buildmesh(l1(N)+l2(N)+l3(N)+l4(N)+l5(N)+l6(N)+l7(N)+
+                  l8(N)+l9(N)+l10(N)+l11(N)+l12(N)+l13(N)+l14(N)+l15(N)+l16(N));
+
+fespace Xh(Th,P2);
+Xh uh,vh;
+
+// ALL Dirichlet: u=0 on all labels except 6 and 10 where u=1
+problem laplace(uh,vh)=int2d(Th)(dx(uh)*dx(vh)+dy(uh)*dy(vh))
+    +on(1,2,3,4,5,7,8,9,11,12,13,14,15,16,uh=0)
+    +on(6,10,uh=g);
+laplace;
+
+// Export on regular grid
+int Nx = 1./delta + 1;
+int Ny = 1./delta + 1;
+real px, py, val;
+
+{
+  ofstream f("crowd_dynamics_alldirichlet.dat");
+  f << "# delta=" << delta << " Nx=" << Nx << " Ny=" << Ny << endl;
+  f << "# x y u" << endl;
+  for (int j=0; j<Ny; j++) {
+    for (int i=0; i<Nx; i++) {
+      px = i * delta;
+      py = j * delta;
+      bool inWall1 = (px >= x1 && px <= x2 && py >= y1 && py <= y2);
+      bool inWall2 = (px >= xx1 && px <= xx2 && py >= yy1 && py <= yy2);
+      bool inWall3 = (px >= xxx1 && px <= xxx2 && py >= yyy1 && py <= yyy2);
+      if (inWall1 || inWall2 || inWall3) {
+        val = -999.0;
+      } else {
+        val = uh(px, py);
+      }
+      f << px << " " << py << " " << val << endl;
+    }
+  }
+}
+
+cout << "Reference exported to crowd_dynamics_alldirichlet.dat" << endl;
+cout << "Grid: " << Nx << " x " << Ny << " delta=" << delta << endl;
+cout << "Solution: min=" << uh[].min << " max=" << uh[].max << endl;

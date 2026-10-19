@@ -1,0 +1,6 @@
+numpy>=2.0
+pybind11>=2.12  # earlier versions corrupt bool arrays under NumPy 2.0 (see cpp/CMakeLists.txt)
+matplotlib>=3.8
+pytest>=6.0
+pytest-cov
+scipy

@@ -1,0 +1,14 @@
+# Keep the build context small and reproducible: exclude host build artifacts,
+# the local virtualenv, VCS metadata, and caches. Everything is rebuilt inside
+# the image.
+.git
+venv
+cpp/build
+benchmarks/dealii/build
+benchmarks/spectral/build
+**/__pycache__
+**/*.so
+.pytest_cache
+*.egg-info
+reviewer_response_tracker.csv
+.~lock.*
